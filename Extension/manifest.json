@@ -1,0 +1,56 @@
+{
+  "manifest_version": 3,
+  "name": "Prism Usage Tracker",
+  "version": "1.0.0",
+  "description": "Fetches AI service usage data and sends it to the Prism Rainmeter widget pack.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1V0d9dPbQKZFIr3MxvlSTq0Z1+gD758pD5xZ0ImnaehX72ldgKLKOe6F4smBYsgNvjd6MYgHXLBAExJjgTl4nawEH4vkD10grmCaOgMg1gTNUqQgjPjXqlcL540efpZS6gb48aaQleB4RRZqVfWdKFAwgEcZjKnE4MUxvmrxZ6YY91uH9cI5rZGRDqqlgVMrrygmOeZ8r7gKDU419McjPDWA0ve8qPRlrItL03Qr5JWbGydZI7pUvJATDkfZZDGUUfhV8v7gBQB1D8UPvbR7mGmQkIbNibEolyCB9MEWUDCRur9ZZ4I1d4qouo3JOUAb2smM2DJyphkD6DPMU5cthQIDAQAB",
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "permissions": [
+    "alarms",
+    "nativeMessaging",
+    "storage",
+    "cookies"
+  ],
+  "host_permissions": [
+    "https://claude.ai/*",
+    "https://chatgpt.com/*",
+    "https://gemini.google.com/*",
+    "https://platform.claude.com/*",
+    "https://platform.openai.com/*",
+    "https://api.openai.com/*",
+    "https://aistudio.google.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["gemini-content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://platform.openai.com/*"],
+      "js": ["openai-content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://aistudio.google.com/*"],
+      "js": ["aistudio-content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Prism Usage Tracker",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  }
+}
