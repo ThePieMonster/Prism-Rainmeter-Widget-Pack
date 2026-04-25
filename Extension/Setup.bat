@@ -1,6 +1,6 @@
 @echo off
 REM ==========================================================================
-REM  Prism Usage Tracker - One-click Setup
+REM  Prism Extension - One-click Setup
 REM
 REM  Double-click this file to install the native messaging host.
 REM  No prompts, no configuration - the extension ID is deterministic

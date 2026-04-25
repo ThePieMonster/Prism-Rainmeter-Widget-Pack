@@ -2,6 +2,165 @@
 //  Prism Popup - Status / Logs / Settings tabs
 // ==========================================================================
 
+// ---- Extension name + version (single source of truth: manifest.json) ----
+const EXT_MANIFEST = chrome.runtime.getManifest();
+const EXT_NAME = EXT_MANIFEST.name;
+const EXT_VERSION = EXT_MANIFEST.version;
+document.title = EXT_NAME;
+{
+    const nameEl = document.getElementById('extension-name');
+    if (nameEl) nameEl.textContent = EXT_NAME;
+    const versionEl = document.getElementById('version');
+    if (versionEl) versionEl.textContent = 'v' + EXT_VERSION;
+    const aboutVersionEl = document.getElementById('version-about');
+    if (aboutVersionEl) aboutVersionEl.textContent = EXT_VERSION;
+}
+
+// ---- Service visibility + order ----
+// Each key maps to the Status row's element ID. Defaults: all visible, canonical order.
+const SERVICE_VISIBILITY_KEY = 'serviceVisibility';
+const SERVICE_ORDER_KEY = 'serviceOrder';
+// Canonical default order: alphabetical by brand, with each brand's consumer
+// plan followed by its API. Users can reorder via drag-and-drop in Settings.
+const SERVICE_ROWS = {
+    chatgpt:    'row-chatgpt',
+    chatgptApi: 'row-chatgpt-api',
+    claude:     'row-claude',
+    claudeApi:  'row-claude-api',
+    gemini:     'row-gemini',
+    geminiApi:  'row-gemini-api',
+};
+const SERVICE_KEYS_CANONICAL = Object.keys(SERVICE_ROWS);
+const SERVICE_DEFAULTS = Object.fromEntries(SERVICE_KEYS_CANONICAL.map(k => [k, true]));
+
+async function getServiceVisibility() {
+    const stored = await chrome.storage.sync.get(SERVICE_VISIBILITY_KEY).catch(() => ({}));
+    return { ...SERVICE_DEFAULTS, ...(stored[SERVICE_VISIBILITY_KEY] || {}) };
+}
+
+async function getServiceOrder() {
+    const stored = await chrome.storage.sync.get(SERVICE_ORDER_KEY).catch(() => ({}));
+    const saved = stored[SERVICE_ORDER_KEY];
+    if (!Array.isArray(saved)) return [...SERVICE_KEYS_CANONICAL];
+    // Filter to valid keys, then append any canonical keys that are missing (e.g. after an update adds a service)
+    const valid = saved.filter(k => SERVICE_KEYS_CANONICAL.includes(k));
+    for (const k of SERVICE_KEYS_CANONICAL) {
+        if (!valid.includes(k)) valid.push(k);
+    }
+    return valid;
+}
+
+async function saveServiceOrder(order) {
+    await chrome.storage.sync.set({ [SERVICE_ORDER_KEY]: order });
+}
+
+async function applyServiceVisibility() {
+    const vis = await getServiceVisibility();
+    const order = await getServiceOrder();
+
+    // 1. Apply order + visibility to the Status panel
+    const statusPanel = document.getElementById('panel-status');
+    const lastUpdated = document.getElementById('last-updated');
+    for (const key of order) {
+        const row = document.getElementById(SERVICE_ROWS[key]);
+        if (!row) continue;
+        row.style.display = vis[key] ? '' : 'none';
+        // Move to just before last-updated (so rows stay above the footer timestamp)
+        if (lastUpdated && row.parentNode === statusPanel) {
+            statusPanel.insertBefore(row, lastUpdated);
+        }
+    }
+
+    // 2. Apply order to the Settings service list
+    const list = document.getElementById('service-list');
+    if (list) {
+        for (const key of order) {
+            const item = list.querySelector(`.service-item[data-service="${key}"]`);
+            if (item) list.appendChild(item);
+        }
+        // Sync toggle checkboxes
+        list.querySelectorAll('.service-toggle').forEach(cb => {
+            const key = cb.dataset.service;
+            if (key in vis) cb.checked = vis[key];
+        });
+    }
+}
+
+document.querySelectorAll('.service-toggle').forEach(cb => {
+    cb.addEventListener('change', async () => {
+        const current = await getServiceVisibility();
+        current[cb.dataset.service] = cb.checked;
+        await chrome.storage.sync.set({ [SERVICE_VISIBILITY_KEY]: current });
+        await applyServiceVisibility();
+    });
+});
+
+// ---- Drag to reorder services ----
+(function setupDragReorder() {
+    const list = document.getElementById('service-list');
+    if (!list) return;
+
+    let dragged = null;
+
+    // Only allow drag when the user grabs the drag handle - prevents accidental
+    // drags when the toggle or label is clicked. Draggable is toggled on at
+    // mousedown and off again at dragend.
+    list.querySelectorAll('.service-item').forEach(item => {
+        item.setAttribute('draggable', 'false');
+        const handle = item.querySelector('.drag-handle');
+        if (handle) {
+            handle.addEventListener('mousedown', () => item.setAttribute('draggable', 'true'));
+            handle.addEventListener('mouseup',   () => item.setAttribute('draggable', 'false'));
+        }
+    });
+
+    list.addEventListener('dragstart', (e) => {
+        const item = e.target.closest('.service-item');
+        if (!item) return;
+        dragged = item;
+        item.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        // Required for Firefox compatibility
+        try { e.dataTransfer.setData('text/plain', item.dataset.service); } catch {}
+    });
+
+    list.addEventListener('dragend', async () => {
+        if (dragged) {
+            dragged.classList.remove('dragging');
+            dragged.setAttribute('draggable', 'false');
+        }
+        list.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
+        dragged = null;
+        // Save on dragend (covers both drop-inside and drop-outside; the DOM is
+        // already at the last-hovered position either way, which matches what
+        // the user sees).
+        const newOrder = [...list.querySelectorAll('.service-item')].map(el => el.dataset.service);
+        await saveServiceOrder(newOrder);
+        await applyServiceVisibility();
+    });
+
+    list.addEventListener('dragover', (e) => {
+        if (!dragged) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const target = e.target.closest('.service-item');
+        list.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
+        if (!target || target === dragged) return;
+
+        const rect = target.getBoundingClientRect();
+        const before = e.clientY < rect.top + rect.height / 2;
+        if (before) list.insertBefore(dragged, target);
+        else list.insertBefore(dragged, target.nextSibling);
+    });
+
+    list.addEventListener('drop', (e) => {
+        // Prevent default so the browser doesn't try to navigate / open the
+        // dragged text. Saving happens in dragend, which fires for both
+        // successful drops and cancelled drags.
+        e.preventDefault();
+    });
+})();
+
 // ---- Tab switching ----
 document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -248,7 +407,7 @@ function formatLogsAsText(logs) {
 async function getFormattedLogs() {
     const { logs = [] } = await chrome.storage.local.get('logs');
     if (logs.length === 0) return { logs, text: null };
-    const header = `Prism Usage Tracker - Log Export\nGenerated: ${new Date().toISOString()}\nEntries: ${logs.length}\n` + '-'.repeat(50) + '\n';
+    const header = `${EXT_NAME} - Log Export\nGenerated: ${new Date().toISOString()}\nEntries: ${logs.length}\n` + '-'.repeat(50) + '\n';
     return { logs, text: header + formatLogsAsText(logs) };
 }
 
@@ -317,6 +476,7 @@ refreshBtn.addEventListener('click', async () => {
 
 (async function init() {
     await loadLogLevel();
+    await applyServiceVisibility();
     await self.prismLog('debug', 'popup', 'Popup opened');
     await renderStatus();
     await renderLogs();
@@ -325,6 +485,7 @@ refreshBtn.addEventListener('click', async () => {
 // Live polling while popup is open
 const pollInterval = setInterval(async () => {
     await renderStatus();
+    await applyServiceVisibility();
     await renderLogs();
 }, 2000);
 

@@ -13,6 +13,9 @@ Extension/nativehost/com.prism.usage.json
 ConsumerData.inc
 NativeHost.log
 
+# Build output
+Extension-v*.zip
+
 # Claude Code
 .claude/
 

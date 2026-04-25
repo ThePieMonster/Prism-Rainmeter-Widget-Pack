@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Prism Usage Tracker</title>
+<title>Prism</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -198,6 +198,71 @@
   }
   .setting-select:focus { outline: none; border-color: #4a90d9; }
 
+  /* Toggle switch (used for service visibility toggles) */
+  .toggle {
+    position: relative;
+    display: inline-block;
+    width: 34px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+  .toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #d1d5db;
+    border-radius: 18px;
+    transition: background-color 0.15s;
+  }
+  .toggle-slider::before {
+    content: "";
+    position: absolute;
+    height: 14px;
+    width: 14px;
+    left: 2px;
+    top: 2px;
+    background-color: white;
+    border-radius: 50%;
+    transition: transform 0.15s;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  }
+  .toggle input:checked + .toggle-slider { background-color: #4a90d9; }
+  .toggle input:checked + .toggle-slider::before { transform: translateX(16px); }
+
+  /* Drag-to-reorder (service list in Settings) */
+  .service-list .setting-row {
+    padding: 6px 8px 6px 4px;
+    border-radius: 6px;
+    transition: background 0.1s;
+  }
+  .service-list .setting-row.dragging {
+    opacity: 0.4;
+    background: #f0f7ff;
+  }
+  .service-list .setting-row.drop-target {
+    box-shadow: inset 0 2px 0 #4a90d9;
+  }
+  .drag-handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-right: 8px;
+    color: #bbb;
+    cursor: grab;
+    user-select: none;
+    transition: color 0.1s;
+  }
+  .drag-handle:hover { color: #666; }
+  .drag-handle:active { cursor: grabbing; }
+  .drag-handle svg { width: 14px; height: 14px; display: block; }
+
   .btn {
     padding: 8px 14px;
     border: 1px solid #e0e0e0;
@@ -316,6 +381,24 @@
 
 <!-- Status panel -->
 <div class="panel active" id="panel-status">
+  <div class="service-row" id="row-chatgpt">
+    <div class="service-icon chatgpt" data-url="https://chatgpt.com" title="Open chatgpt.com">
+      <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>
+    </div>
+    <div class="service-info">
+      <div class="service-name">ChatGPT <span class="service-plan" id="chatgpt-plan">-</span></div>
+      <div class="service-detail" id="chatgpt-detail">Loading...</div>
+    </div>
+  </div>
+  <div class="service-row" id="row-chatgpt-api">
+    <div class="service-icon chatgpt" data-url="https://platform.openai.com/settings/organization/usage" title="Open ChatGPT API dashboard">
+      <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>
+    </div>
+    <div class="service-info">
+      <div class="service-name">ChatGPT API <span class="service-plan" id="chatgpt-api-plan">-</span></div>
+      <div class="service-detail" id="chatgpt-api-detail">Loading...</div>
+    </div>
+  </div>
   <div class="service-row" id="row-claude">
     <div class="service-icon claude" data-url="https://claude.ai" title="Open claude.ai">
       <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>
@@ -327,24 +410,6 @@
       <div class="service-bar weekly" id="claude-bar-weekly" style="display:none"><div class="service-bar-fill" style="width:0%"></div></div>
     </div>
   </div>
-  <div class="service-row" id="row-chatgpt">
-    <div class="service-icon chatgpt" data-url="https://chatgpt.com" title="Open chatgpt.com">
-      <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>
-    </div>
-    <div class="service-info">
-      <div class="service-name">ChatGPT <span class="service-plan" id="chatgpt-plan">-</span></div>
-      <div class="service-detail" id="chatgpt-detail">Loading...</div>
-    </div>
-  </div>
-  <div class="service-row" id="row-gemini">
-    <div class="service-icon gemini" data-url="https://gemini.google.com" title="Open gemini.google.com">
-      <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>
-    </div>
-    <div class="service-info">
-      <div class="service-name">Gemini <span class="service-plan" id="gemini-plan">-</span></div>
-      <div class="service-detail" id="gemini-detail">Loading...</div>
-    </div>
-  </div>
   <div class="service-row" id="row-claude-api">
     <div class="service-icon claude" data-url="https://platform.claude.com/workspaces/default/cost" title="Open Claude API dashboard">
       <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>
@@ -354,13 +419,13 @@
       <div class="service-detail" id="claude-api-detail">Loading...</div>
     </div>
   </div>
-  <div class="service-row" id="row-chatgpt-api">
-    <div class="service-icon chatgpt" data-url="https://platform.openai.com/settings/organization/usage" title="Open ChatGPT API dashboard">
+  <div class="service-row" id="row-gemini">
+    <div class="service-icon gemini" data-url="https://gemini.google.com" title="Open gemini.google.com">
       <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>
     </div>
     <div class="service-info">
-      <div class="service-name">ChatGPT API <span class="service-plan" id="chatgpt-api-plan">-</span></div>
-      <div class="service-detail" id="chatgpt-api-detail">Loading...</div>
+      <div class="service-name">Gemini <span class="service-plan" id="gemini-plan">-</span></div>
+      <div class="service-detail" id="gemini-detail">Loading...</div>
     </div>
   </div>
   <div class="service-row" id="row-gemini-api">
@@ -391,6 +456,41 @@
 <!-- Settings panel -->
 <div class="panel" id="panel-settings">
   <div class="setting-section">
+    <div class="setting-title">Services <span style="font-weight: 400; text-transform: none; letter-spacing: 0; color: #999; margin-left: 4px;">drag to reorder</span></div>
+    <div class="service-list" id="service-list">
+      <div class="setting-row service-item" data-service="chatgpt">
+        <span class="drag-handle" aria-label="Drag to reorder"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="3" r="1.3"/><circle cx="11" cy="3" r="1.3"/><circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/><circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/></svg></span>
+        <span class="setting-label" style="flex: 1;">ChatGPT</span>
+        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="chatgpt" checked><span class="toggle-slider"></span></label>
+      </div>
+      <div class="setting-row service-item" data-service="chatgptApi">
+        <span class="drag-handle" aria-label="Drag to reorder"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="3" r="1.3"/><circle cx="11" cy="3" r="1.3"/><circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/><circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/></svg></span>
+        <span class="setting-label" style="flex: 1;">ChatGPT API</span>
+        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="chatgptApi" checked><span class="toggle-slider"></span></label>
+      </div>
+      <div class="setting-row service-item" data-service="claude">
+        <span class="drag-handle" aria-label="Drag to reorder"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="3" r="1.3"/><circle cx="11" cy="3" r="1.3"/><circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/><circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/></svg></span>
+        <span class="setting-label" style="flex: 1;">Claude</span>
+        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="claude" checked><span class="toggle-slider"></span></label>
+      </div>
+      <div class="setting-row service-item" data-service="claudeApi">
+        <span class="drag-handle" aria-label="Drag to reorder"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="3" r="1.3"/><circle cx="11" cy="3" r="1.3"/><circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/><circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/></svg></span>
+        <span class="setting-label" style="flex: 1;">Claude API</span>
+        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="claudeApi" checked><span class="toggle-slider"></span></label>
+      </div>
+      <div class="setting-row service-item" data-service="gemini">
+        <span class="drag-handle" aria-label="Drag to reorder"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="3" r="1.3"/><circle cx="11" cy="3" r="1.3"/><circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/><circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/></svg></span>
+        <span class="setting-label" style="flex: 1;">Gemini</span>
+        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="gemini" checked><span class="toggle-slider"></span></label>
+      </div>
+      <div class="setting-row service-item" data-service="geminiApi">
+        <span class="drag-handle" aria-label="Drag to reorder"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="3" r="1.3"/><circle cx="11" cy="3" r="1.3"/><circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/><circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/></svg></span>
+        <span class="setting-label" style="flex: 1;">Gemini API</span>
+        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="geminiApi" checked><span class="toggle-slider"></span></label>
+      </div>
+    </div>
+  </div>
+  <div class="setting-section">
     <div class="setting-title">Gemini API</div>
     <div class="setting-row">
       <span class="setting-label">Project</span>
@@ -414,7 +514,7 @@
     <div class="setting-title">About</div>
     <div class="setting-row">
       <span class="setting-label">Version</span>
-      <span style="font-size: 12px; color: #999;">1.0.0</span>
+      <span style="font-size: 12px; color: #999;" id="version-about">1.1.0</span>
     </div>
     <div class="setting-row">
       <span class="setting-label">Project</span>
@@ -425,8 +525,8 @@
 
 <!-- Footer -->
 <div class="footer">
-  <span class="footer-text">Prism Usage Tracker</span>
-  <span class="footer-text" id="version">v1.0.0</span>
+  <span class="footer-text" id="extension-name"></span>
+  <span class="footer-text" id="version">v1.1.0</span>
 </div>
 
 <!-- Status toast -->

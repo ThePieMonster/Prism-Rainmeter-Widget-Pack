@@ -11,7 +11,7 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D4.svg)](#requirements)
 [![Rainmeter 4.5+](https://img.shields.io/badge/Rainmeter-4.5%2B-orange.svg)](https://www.rainmeter.net/)
-[![Chrome / Edge](https://img.shields.io/badge/Browser-Chrome%20%7C%20Edge-4285F4.svg)](#requirements)
+[![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-Install-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/prism-rainmeter/nmlnncddmhjfiahelimfgajdidcobajc)
 [![Version 1.0.0](https://img.shields.io/badge/Version-1.0.0-green.svg)](#)
 
 </div>
@@ -123,17 +123,28 @@ Right-click any widget → pick a style or theme → **all widgets refresh toget
 
 ### 2. Install the Chrome extension and native host
 
-The AI usage widgets need a small Chrome/Edge extension plus a Native Messaging host. The extension ID is **deterministic** (baked into the manifest), so setup is one-click - you don't have to copy any IDs.
+The AI usage widgets need a small Chrome/Edge extension plus a Native Messaging host.
 
-1. **Double-click** `Extension\Setup.bat`.
-   This runs `Install.ps1`, which derives the extension ID from the public key in `manifest.json` and registers the native host with Chrome and Edge.
-2. Open `chrome://extensions` (or `edge://extensions`).
-3. Enable **Developer mode** (toggle in the top-right).
-4. Click **Load unpacked** and select the `Prism\Extension` folder.
-5. Make sure you're signed in to the services you want to track in the same browser.
-6. Click the Prism extension icon → hit **Refresh** to fetch immediately.
+1. Install the extension from the Chrome Web Store:
+   **[Prism - Rainmeter](https://chromewebstore.google.com/detail/prism-rainmeter/nmlnncddmhjfiahelimfgajdidcobajc)**
+2. **Double-click** `Extension\Setup.bat`.
+   This runs `Install.ps1`, which registers the Native Messaging host with Chrome, Edge, and Brave. The Web Store extension ID is hardcoded, so no configuration is needed.
+3. Make sure you're signed in to the services you want to track in the same browser.
+4. Click the Prism extension icon → hit **Refresh** to fetch immediately.
 
 The extension wakes every minute via `chrome.alarms`, fetches usage data using your existing session, and pipes it through the native host into `@Resources/ConsumerData.inc`. Each Rainmeter widget polls that file and updates within a minute.
+
+<details>
+<summary>Loading from source instead of the Web Store (for contributors)</summary>
+
+If you cloned this repo and want to run from the source tree:
+
+1. Run `Extension\Setup.bat`. `Install.ps1` will detect the `key` field in `manifest.json`, derive the sideload ID, and add it to `allowed_origins` alongside the Web Store ID.
+2. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and pick the `Extension` folder.
+
+Both the Web Store build and the sideload build can coexist - the native host accepts both extension IDs.
+
+</details>
 
 ### Uninstall
 

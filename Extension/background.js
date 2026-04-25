@@ -1,5 +1,5 @@
 // ==========================================================================
-//  Prism Usage Tracker - Service Worker
+//  Prism Extension - Service Worker
 //  Periodically fetches usage data from claude.ai, chatgpt.com, gemini.google.com
 //  using the user's existing authenticated session. Sends results to the
 //  native messaging host which writes to ConsumerData.inc.
@@ -522,20 +522,49 @@ async function runUpdate() {
     // Cache for popup
     await chrome.storage.local.set({ lastPayload: payload, lastUpdate: Date.now() });
 
-    // Send to native host
+    // Send to native host - try sendNativeMessage first, then connectNative as fallback
     try {
-        await new Promise((resolve, reject) => {
+        const t0 = Date.now();
+        const response = await new Promise((resolve, reject) => {
             chrome.runtime.sendNativeMessage(NATIVE_HOST, payload, (response) => {
+                const dt = Date.now() - t0;
                 if (chrome.runtime.lastError) {
-                    reject(new Error(chrome.runtime.lastError.message));
+                    reject(new Error(`${chrome.runtime.lastError.message} (after ${dt}ms, host=${NATIVE_HOST})`));
                 } else {
                     resolve(response);
                 }
             });
         });
-        log('debug', 'core', 'Native host write OK');
+        log('debug', 'core', 'Native host write OK (sendNativeMessage)', { response, ms: Date.now() - t0 });
     } catch (e) {
-        log('error', 'core', 'Native host error: ' + e.message);
+        log('warn', 'core', 'sendNativeMessage failed, trying connectNative: ' + e.message);
+        // Fallback: try connectNative (persistent port, different Chrome code path)
+        try {
+            const t0 = Date.now();
+            const response = await new Promise((resolve, reject) => {
+                let port;
+                try {
+                    port = chrome.runtime.connectNative(NATIVE_HOST);
+                } catch (err) {
+                    reject(new Error(`connectNative threw: ${err.message}`));
+                    return;
+                }
+                port.onMessage.addListener((msg) => {
+                    resolve(msg);
+                    port.disconnect();
+                });
+                port.onDisconnect.addListener(() => {
+                    const err = chrome.runtime.lastError;
+                    if (err) reject(new Error(`connectNative disconnected: ${err.message} (after ${Date.now() - t0}ms)`));
+                });
+                port.postMessage(payload);
+                // Timeout after 5 seconds
+                setTimeout(() => reject(new Error(`connectNative timeout after 5s`)), 5000);
+            });
+            log('info', 'core', 'Native host write OK (connectNative fallback)', { response });
+        } catch (e2) {
+            log('error', 'core', 'connectNative also failed: ' + e2.message);
+        }
     }
 }
 
