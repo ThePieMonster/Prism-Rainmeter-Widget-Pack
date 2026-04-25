@@ -15,8 +15,8 @@ third parties.
 When you install the extension and the companion Rainmeter widget pack,
 the extension:
 
-1. At a user-configured interval (default every 5 minutes), wakes up its
-   background service worker.
+1. Once per minute, wakes up its background service worker via the
+   Manifest V3 `chrome.alarms` API.
 2. Sends `fetch()` requests to the AI services you have authorized
    (Claude, ChatGPT, Gemini, and their developer APIs), using the session
    cookies your browser already has from being logged in to those sites.
@@ -41,7 +41,7 @@ the extension:
 | API spend | "$1.94 this month" | Local file + popup cache |
 | Org UUIDs | Claude / OpenAI account IDs | Local cache only (used to build subsequent API URLs) |
 | Internal logs | "Fetch success: MTD=$1.94" | Local cache only (visible on the popup's Logs tab) |
-| User settings | Refresh interval, log level | `chrome.storage.sync` |
+| User settings | Log level | `chrome.storage.sync` |
 
 ## What data is NOT collected
 

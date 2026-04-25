@@ -307,6 +307,15 @@ if (-not $rainmeterExe) {
         & $rainmeterExe '!ActivateConfig' $w.Config $w.File 2>$null | Out-Null
     }
     Write-Host "  Sent !ActivateConfig for $($widgets.Count) Prism widgets." -ForegroundColor Green
+
+    # Force a Rainmeter "Refresh All" so any changes to .ini files or
+    # @Include files (e.g. a freshly-copied Disconnected.inc) are picked
+    # up immediately instead of waiting for each widget's 60s auto-refresh.
+    # Tiny delay so the !ActivateConfig bangs above are processed first.
+    Start-Sleep -Seconds 1
+    & $rainmeterExe '!RefreshApp' 2>$null | Out-Null
+    Write-Host "  Triggered !RefreshApp - all skins reloaded." -ForegroundColor Green
+
     Write-Host "  (Right-click any widget to reposition, change style, or unload.)" -ForegroundColor DarkGray
 }
 

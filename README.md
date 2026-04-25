@@ -104,7 +104,7 @@ Right-click any widget → pick a style or theme → **all widgets refresh toget
 
 - **Windows 10 / 11**
 - **[Rainmeter](https://www.rainmeter.net/) 4.5 or newer**
-- **Google Chrome or Microsoft Edge** (for the usage extension)
+- **Google Chrome, Microsoft Edge, or Brave** (for the usage extension)
 - One or more of: a logged-in `claude.ai` / `chatgpt.com` / `gemini.google.com` session, and/or a logged-in `platform.claude.com` / `platform.openai.com` / `aistudio.google.com` session
 - Optional fonts (used by some styles):
   - **Segoe UI Light** - ships with Windows
@@ -119,18 +119,20 @@ Right-click any widget → pick a style or theme → **all widgets refresh toget
 
 - **[Rainmeter](https://www.rainmeter.net/) 4.5+** must already be installed.
 - **Google Chrome, Edge, or Brave** signed in to whichever AI services you want to track.
-- **[Python 3.10+](https://www.python.org/downloads/)** is optional — only used by the bridge fallback (see [How It Works](#how-it-works)). `Install.ps1` skips it silently if missing.
+- **[Python 3.10+](https://www.python.org/downloads/)** is optional, only used by the bridge fallback (see [How It Works](#how-it-works)). `Install.ps1` skips it silently if missing.
 
 ### Quick install (most users)
 
 1. **Install the Chrome extension** from the Web Store:
-   **[Prism - Rainmeter](https://chromewebstore.google.com/detail/prism-rainmeter/nmlnncddmhjfiahelimfgajdidcobajc)**
+
+   [![Install on Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-Install%20Now-4285F4?logo=googlechrome&logoColor=white&style=for-the-badge)](https://chromewebstore.google.com/detail/prism-rainmeter/nmlnncddmhjfiahelimfgajdidcobajc)
+
 2. **Download the latest release** (or clone this repo) and **double-click `Setup\Setup.bat`**.
 
 `Setup.bat` runs `Install.ps1`, which:
 - Writes the Native Messaging host manifest and registers it with Chrome, Edge, and Brave
 - Links (or copies) the `Prism\` skins folder into `Documents\Rainmeter\Skins\`
-- Tells Rainmeter to load every Prism widget (`!ActivateConfig`)
+- Tells Rainmeter to load every Prism widget (`!ActivateConfig`) and refresh all skins (`!RefreshApp`)
 - Sets up the bridge poller (Chrome workaround) as an at-logon scheduled task and starts it
 
 After that the widgets appear on your desktop and start updating within ~60 seconds. Right-click any widget to reposition, change style/theme, or unload widgets you don't want.
@@ -143,11 +145,11 @@ Use this if you're modifying the extension or skins:
 2. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and pick the `Extension\` folder.
 3. **Double-click `Setup\Setup.bat`**.
 
-`Install.ps1` reads the `key` field in `manifest.json`, derives the sideload extension ID, and adds it to `allowed_origins` alongside the Web Store ID — so the Web Store build and the sideload build can both talk to the same native host. It also creates a directory junction from `Documents\Rainmeter\Skins\Prism` back to the repo's `Prism\` folder, so any edits you make in the repo show up live.
+`Install.ps1` reads the `key` field in `manifest.json`, derives the sideload extension ID, and adds it to `allowed_origins` alongside the Web Store ID, so the Web Store build and the sideload build can both talk to the same native host. It also creates a directory junction from `Documents\Rainmeter\Skins\Prism` back to the repo's `Prism\` folder, so any edits you make in the repo show up live.
 
 ### Uninstall
 
-Double-click `Setup\Remove.bat`. It removes the native-host registry entries, unregisters the bridge-poller scheduled task, and kills the running poller. Then remove the extension from `chrome://extensions` and delete the `Prism` skin folder if you want it gone entirely.
+Double-click `Setup\Remove.bat`. It removes the native-host registry entries, unregisters the bridge-poller scheduled task, kills the running poller, resets `ConsumerData.inc` to a disconnected stub (so the widgets show "Not connected" instead of stale numbers), and triggers `!RefreshApp` so the change is visible immediately. Then remove the extension from `chrome://extensions` and delete the `Prism` skin folder if you want it gone entirely.
 
 ---
 
@@ -182,7 +184,7 @@ Double-click `Setup\Remove.bat`. It removes the native-host registry entries, un
        │                     │  reads lastPayload from
        │                     │  chrome.storage.local
        ▼                     ▼
-   nativehost\NativeHost.ps1 (length-prefixed JSON over stdio)
+   Setup\NativeHost.ps1 (length-prefixed JSON over stdio)
        └─ writes @Resources\ConsumerData.inc atomically
                   │
                   ▼
@@ -192,9 +194,9 @@ Double-click `Setup\Remove.bat`. It removes the native-host registry entries, un
 
 ### Why two paths to the host?
 
-The direct `chrome.runtime.sendNativeMessage` path is what the extension uses by default and what works for most installs. On some Chrome builds (observed on Chrome 147.x), that call fails fast with "Specified native messaging host not found" even though every layer of the configuration is correct — likely a cached negative result Chrome holds onto across extension reloads.
+The direct `chrome.runtime.sendNativeMessage` path is what the extension uses by default and what works for most installs. On some Chrome builds (observed on Chrome 147.x), that call fails fast with "Specified native messaging host not found" even though every layer of the configuration is correct (likely a cached negative result Chrome holds onto across extension reloads).
 
-When that happens, the service worker still fetches data successfully and writes it to `chrome.storage.local`. **`BridgePoll.py`** is a small Python loop (set up by `Install.ps1` as an at-logon scheduled task) that reads that cache every 30 seconds and pipes it directly to the same native host the SW would have called. Result: widgets stay live regardless of which path is working. If the direct path is healthy, both paths see the same data — harmless redundancy.
+When that happens, the service worker still fetches data successfully and writes it to `chrome.storage.local`. **`BridgePoll.py`** is a small Python loop (set up by `Install.ps1` as an at-logon scheduled task) that reads that cache every 30 seconds and pipes it directly to the same native host the SW would have called. Result: widgets stay live regardless of which path is working. If the direct path is healthy, both paths see the same data (harmless redundancy).
 
 The bridge is optional. Skip it by uninstalling Python or unregistering the `Prism Bridge Poller` scheduled task; the direct native-messaging path works fine on unaffected Chrome builds.
 
@@ -220,14 +222,14 @@ Switching style/theme rewrites `Settings.inc` and refreshes all skins, so visual
 **Widget says "Not connected"**
 Make sure you're signed into the corresponding service in the same browser where the extension is loaded. Open the extension popup → **Logs** to see what the last fetch returned. Click **Refresh** to retry immediately.
 
-**Widget says "Active – no usage data available"**
+**Widget says "Active - no usage data available"**
 The service is logged in but doesn't expose usage numbers for your plan tier (e.g., ChatGPT Free). The plan badge is still useful confirmation that auth is working.
 
 **Numbers haven't updated in a while**
 Each widget self-refreshes once a minute. If the number is genuinely stale, the upstream fetch is probably failing - check the extension popup's log feed. Use **Copy** or **Export** to share logs.
 
 **"Native host not found" in Chrome console / extension popup**
-First, re-run `Setup\Setup.bat` and click **Reload** on the Prism extension card at `chrome://extensions`. If the error keeps coming back even after reload, your Chrome install is hitting the bug the bridge poller works around — that's normal, and as long as widgets are updating you can ignore the error. Confirm the bridge is alive by checking `Setup\bridge.log` for recent `OK ts=...` lines, and that `pythonw.exe` is running with `BridgePoll.py` in its command line.
+First, re-run `Setup\Setup.bat` and click **Reload** on the Prism extension card at `chrome://extensions`. If the error keeps coming back even after reload, your Chrome install is hitting the bug the bridge poller works around. That's normal, and as long as widgets are updating you can ignore the error. Confirm the bridge is alive by checking `Setup\bridge.log` for recent `OK ts=...` lines, and that `pythonw.exe` is running with `BridgePoll.py` in its command line.
 
 **Bridge poller not running**
 The at-logon scheduled task starts it on next login, but you can launch it immediately with:
