@@ -6,21 +6,35 @@
 #
 #  Messages arrive as: [4-byte LE uint32 length][JSON bytes]
 #  Responses sent as: [4-byte LE uint32 length][JSON bytes]
+#
+#  Layout-resilient: searches several candidate locations for the Rainmeter
+#  @Resources folder so this script works whether it lives in the dev repo
+#  (alongside Prism/), in the installed skins folder, or in a system-wide
+#  install location.
 # ==========================================================================
 
 $ErrorActionPreference = 'Stop'
 
-# Resolve paths relative to this script
+# Resolve the Rainmeter @Resources folder.
 $scriptDir = Split-Path -Parent $PSCommandPath
-$extensionDir = Split-Path -Parent $scriptDir   # Extension folder
-$parentDir = Split-Path -Parent $extensionDir
+$candidates = @()
 
-# Support both layouts:
-#   Skins install: Extension is inside Prism/, so parent has @Resources directly
-#   Repo/dev:      Extension is beside Prism/, so @Resources is under Prism/
-$resourcesPath = Join-Path $parentDir "@Resources"
-if (-not (Test-Path $resourcesPath)) {
-    $resourcesPath = Join-Path $parentDir "Prism\@Resources"
+# 1. Adjacent repo layout (dev):  <repo>/Extension/nativehost/ -> <repo>/Prism/@Resources
+$candidates += Join-Path (Split-Path -Parent (Split-Path -Parent $scriptDir)) 'Prism\@Resources'
+# 2. Installed repo layout: <repo>/@Resources directly
+$candidates += Join-Path (Split-Path -Parent (Split-Path -Parent $scriptDir)) '@Resources'
+# 3. Standard Rainmeter install: Documents\Rainmeter\Skins\Prism\@Resources
+$candidates += Join-Path $env:USERPROFILE 'Documents\Rainmeter\Skins\Prism\@Resources'
+# 4. OneDrive-redirected Documents
+$candidates += Join-Path $env:USERPROFILE 'OneDrive\Documents\Rainmeter\Skins\Prism\@Resources'
+
+$resourcesPath = $null
+foreach ($c in $candidates) {
+    if (Test-Path $c) { $resourcesPath = $c; break }
+}
+if (-not $resourcesPath) {
+    # Last resort: default to the standard location even if missing (will error on write)
+    $resourcesPath = Join-Path $env:USERPROFILE 'Documents\Rainmeter\Skins\Prism\@Resources'
 }
 $consumerPath = Join-Path $resourcesPath "ConsumerData.inc"
 $logPath = Join-Path $resourcesPath "NativeHost.log"
@@ -114,6 +128,7 @@ try {
         $geminiApi = $msg.geminiApi
 
         $timestamp = Get-Date -Format "HH:mm"
+        $epoch = [DateTimeOffset]::Now.ToUnixTimeSeconds()
         $content = @"
 [Variables]
 ; ==========================================================================
@@ -179,6 +194,7 @@ GeminiApiPeriodLabel=$(Format-Label $geminiApi.PeriodLabel "")
 
 ; --- Metadata ---
 ConsumerLastUpdated=$timestamp
+ConsumerLastUpdatedEpoch=$epoch
 ConsumerUpdateStatus=OK
 "@
 
