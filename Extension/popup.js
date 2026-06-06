@@ -253,10 +253,27 @@ async function renderStatus() {
     const m = lastPayload.gemini || {};
     setPlanBadge(document.getElementById('gemini-plan'), m.Connected, m.PlanName);
     const mDetail = document.getElementById('gemini-detail');
-    if (!m.Connected) mDetail.textContent = m.error || 'Not connected';
-    else if (m.HasUsageData) mDetail.innerHTML = `<strong>${m.DailyPercent}%</strong> daily used`;
-    else if (m.PlanName === 'Unknown') mDetail.innerHTML = `Visit <a href="https://gemini.google.com/" target="_blank" rel="noopener">gemini.google.com</a> to detect plan`;
-    else mDetail.textContent = 'Active - no usage data available';
+    const geminiBarSession = document.getElementById('gemini-bar-session');
+    const geminiBarWeekly = document.getElementById('gemini-bar-weekly');
+    if (!m.Connected) {
+        mDetail.textContent = m.error || 'Not connected';
+        geminiBarSession.style.display = 'none';
+        geminiBarWeekly.style.display = 'none';
+    } else if (m.HasUsageData) {
+        mDetail.innerHTML = `Session <strong>${m.SessionPercent}%</strong> · ${m.SessionReset || ''}<br>Weekly <strong>${m.WeeklyPercent}%</strong> · ${m.WeeklyReset || ''}`;
+        geminiBarSession.style.display = 'block';
+        geminiBarSession.querySelector('.service-bar-fill').style.width = (m.SessionPercent || 0) + '%';
+        geminiBarWeekly.style.display = 'block';
+        geminiBarWeekly.querySelector('.service-bar-fill').style.width = (m.WeeklyPercent || 0) + '%';
+    } else if (m.PlanName === 'Unknown') {
+        mDetail.innerHTML = `Visit <a href="https://gemini.google.com/" target="_blank" rel="noopener">gemini.google.com</a> to detect plan`;
+        geminiBarSession.style.display = 'none';
+        geminiBarWeekly.style.display = 'none';
+    } else {
+        mDetail.textContent = 'Active - no usage data available';
+        geminiBarSession.style.display = 'none';
+        geminiBarWeekly.style.display = 'none';
+    }
 
     // ---- Claude API (platform.claude.com) ----
     const a = lastPayload.claudeApi || {};

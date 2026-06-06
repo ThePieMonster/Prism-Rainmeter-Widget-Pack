@@ -1,6 +1,6 @@
 # Privacy Policy - Prism Rainmeter Widget Pack
 
-_Last updated: April 2026_
+_Last updated: June 2026_
 
 ## Summary
 
@@ -22,9 +22,11 @@ the extension:
    cookies your browser already has from being logged in to those sites.
 3. Extracts a small set of values from each response: current plan name,
    usage percentage, reset time, API credit balance, recent spend.
-4. For three services that do not expose these values via an API (Gemini,
-   OpenAI Platform, Google AI Studio), a small content script reads the
-   same values from the rendered page DOM.
+4. For data that is not exposed via a clean API - the Gemini plan badge
+   and the OpenAI Platform / Google AI Studio dashboards - a small content
+   script reads the values from the rendered page DOM. (Gemini's usage
+   percentages are instead fetched from `gemini.google.com`'s own internal
+   usage endpoint - the same one the site's Usage page uses.)
 5. Sends the extracted values to a small native messaging host bundled
    with the widget pack, which writes them to a local file in the
    Rainmeter `@Resources` folder.
@@ -40,6 +42,7 @@ the extension:
 | Reset times | "Resets Sat 9:00 PM" | Local file + popup cache |
 | API spend | "$1.94 this month" | Local file + popup cache |
 | Org UUIDs | Claude / OpenAI account IDs | Local cache only (used to build subsequent API URLs) |
+| Session token | Gemini anti-CSRF token + page build/session IDs | Local cache only (used to call Gemini's usage endpoint) |
 | Internal logs | "Fetch success: MTD=$1.94" | Local cache only (visible on the popup's Logs tab) |
 | User settings | Log level | `chrome.storage.sync` |
 
@@ -65,11 +68,15 @@ To make authenticated requests, the extension reads:
   domain (used as request credentials).
 - For OpenAI Platform, an Auth0 JWT that the website itself stores in
   `localStorage` (used as a request bearer token).
+- For Gemini, an anti-CSRF token and the page's build/session identifiers
+  embedded in the `gemini.google.com` HTML. These are required to call
+  Gemini's internal usage endpoint, and are cached in `chrome.storage.local`
+  so the extension does not have to re-download the page on every refresh.
 
 These credentials are **only used to make same-origin requests to the
-service that issued them**. They are never written to extension storage,
-never sent to the native host, never sent to any third party, and never
-leave your machine.
+service that issued them**. Apart from the cached Gemini token noted above,
+they are not written to extension storage. None of them are ever sent to
+the native host, sent to any third party, or moved off your machine.
 
 ## Where your data goes
 

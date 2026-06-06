@@ -164,8 +164,10 @@ ChatGPTMessageLabel=Messages (3hr)
 GeminiConsumerConnected=$(Format-Value $gemini.Connected)
 GeminiHasUsageData=$(Format-Value $gemini.HasUsageData)
 GeminiPlanName=$(Format-Value $gemini.PlanName)
-GeminiDailyPercent=$(Format-Percent $gemini.DailyPercent)
-GeminiDailyReset=$(Format-Value $gemini.DailyReset)
+GeminiSessionPercent=$(Format-Percent $gemini.SessionPercent)
+GeminiSessionReset=$(Format-Value $gemini.SessionReset)
+GeminiWeeklyPercent=$(Format-Percent $gemini.WeeklyPercent)
+GeminiWeeklyReset=$(Format-Value $gemini.WeeklyReset)
 
 ; --- Claude API Platform ---
 ClaudeApiConnected=$(Format-Bool $claudeApi.Connected)

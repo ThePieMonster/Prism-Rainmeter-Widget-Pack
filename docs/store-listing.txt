@@ -1,0 +1,40 @@
+Companion extension for the Prism Rainmeter widget pack. Tracks
+your AI service usage and feeds the data to desktop widgets so you
+can see plan limits, message counts, and API spend at a glance
+without opening a browser tab.
+
+== What's new in 1.2 ==
+- Gemini usage tracking: live 5-hour session and weekly limit bars,
+  read straight from gemini.google.com/usage (the same compute-based
+  limits the Gemini app shows). Previously Gemini showed plan status only.
+
+== Supported services ==
+- ChatGPT (chatgpt.com) - message counts
+- OpenAI Platform / API - credit balance and recent spend
+- Claude (claude.ai) - session usage and weekly limits
+- Claude Console / API - credit balance and recent spend
+- Gemini (gemini.google.com) - session usage and weekly limits
+- Google AI Studio - quota tracking
+
+== How it works ==
+The extension uses your existing browser sessions on each service.
+You stay logged in normally; the extension reads the same usage
+data the website shows you, then forwards it to a small native
+helper that writes it to a file the Rainmeter widgets read.
+
+== What you need ==
+- Technically this extension doesn't require anything. If you want to monitor your usage just from this extension in Chrome, this is all you need.
+
+Otherwise if you want the Rainmeter desktop widgets then you need:
+- The Prism Rainmeter widget pack installed
+- The native messaging host (one-click install via Setup.bat)
+- An active session on whichever services you want to track
+
+== What this extension does NOT do ==
+- No credentials are sent to any server or third party
+- No data is sent to third-party servers
+- No tracking, telemetry, or analytics
+- All data stays on your machine
+
+Open source under GPL v3. Source code, installation guide, and
+the full Rainmeter widget pack are on GitHub.

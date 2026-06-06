@@ -24,8 +24,10 @@ ChatGPTMessageLabel=Messages (3hr)
 GeminiConsumerConnected=0
 GeminiHasUsageData=0
 GeminiPlanName=
-GeminiDailyPercent=0
-GeminiDailyReset=
+GeminiSessionPercent=0
+GeminiSessionReset=
+GeminiWeeklyPercent=0
+GeminiWeeklyReset=
 
 ClaudeApiConnected=0
 ClaudeApiMonthTotal=0.00

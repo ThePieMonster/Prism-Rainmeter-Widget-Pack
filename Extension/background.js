@@ -450,6 +450,116 @@ async function discoverPlatformOrgId() {
     }
 }
 
+// ---- Gemini consumer usage (gemini.google.com/usage) ----
+//
+// gemini.google.com/usage exposes compute-based limits that refresh every
+// 5 hours plus a weekly cap — the same shape as Claude's session/weekly bars.
+// The page loads the numbers via a batchexecute RPC (rpcid jSf9Qc) that takes
+// no arguments. We replicate it from the service worker: fetch the app HTML
+// once to grab the XSRF token (SNlM0e) + build label (cfb2h) + session id
+// (FdrFJe), then POST the RPC. Tokens are cached (stable for the session) and
+// only re-fetched when the RPC rejects them, so we don't pull the heavy app
+// HTML every cycle.
+//
+// NOTE: jSf9Qc is Google's internal RPC id and can change when the Gemini web
+// app is rebuilt. If usage stops resolving (HasUsageData flips to 0 while the
+// plan still shows), re-capture it from the gemini.google.com/usage network
+// tab (POST to .../batchexecute?rpcids=...) and update the constant below.
+
+const GEMINI_USAGE_RPC = 'jSf9Qc';
+const GEMINI_TOKENS_KEY = 'geminiTokens';
+const GEMINI_TOKENS_MAX_AGE_MS = 6 * 60 * 60 * 1000; // backstop; refresh-on-failure is the real mechanism
+
+async function getGeminiTokens(forceRefresh) {
+    if (!forceRefresh) {
+        const cached = (await chrome.storage.local.get(GEMINI_TOKENS_KEY))[GEMINI_TOKENS_KEY];
+        if (cached && cached.at && Date.now() - cached.cachedAt < GEMINI_TOKENS_MAX_AGE_MS) {
+            return cached;
+        }
+    }
+    const r = await fetch('https://gemini.google.com/app', { credentials: 'include' });
+    if (!r.ok) {
+        log('warn', 'gemini', `app HTML fetch HTTP ${r.status} (login required?)`);
+        return null;
+    }
+    const html = await r.text();
+    const grab = (re) => { const m = html.match(re); return m ? m[1] : null; };
+    const at = grab(/"SNlM0e":"([^"]+)"/);
+    if (!at) {
+        log('warn', 'gemini', 'Could not extract XSRF token (SNlM0e) from app HTML');
+        return null;
+    }
+    const tokens = {
+        at,
+        bl: grab(/"cfb2h":"([^"]+)"/) || '',
+        sid: grab(/"FdrFJe":"([^"]+)"/) || '',
+        cachedAt: Date.now()
+    };
+    await chrome.storage.local.set({ [GEMINI_TOKENS_KEY]: tokens });
+    log('debug', 'gemini', 'Refreshed Gemini tokens from app HTML');
+    return tokens;
+}
+
+function parseGeminiUsage(inner) {
+    // inner = [n, [ [id, fraction(0-1), typeCode, [[resetEpochSec, nanos]]], ... ], bool]
+    // typeCode 1 = current/5-hour limit, 2 = weekly limit.
+    const entries = Array.isArray(inner) && Array.isArray(inner[1]) ? inner[1] : [];
+    const out = {};
+    for (const e of entries) {
+        if (!Array.isArray(e)) continue;
+        const fraction = typeof e[1] === 'number' ? e[1] : 0;
+        const resetSec = e[3]?.[0]?.[0];
+        const slot = {
+            pct: Math.round(fraction * 100),
+            resetIso: typeof resetSec === 'number' ? new Date(resetSec * 1000).toISOString() : null
+        };
+        if (e[2] === 1) out.session = slot;
+        else if (e[2] === 2) out.weekly = slot;
+    }
+    return out;
+}
+
+async function callGeminiUsageRpc(tokens) {
+    const reqid = Math.floor(Math.random() * 1e6);
+    const url = `https://gemini.google.com/_/BardChatUi/data/batchexecute?rpcids=${GEMINI_USAGE_RPC}&source-path=%2Fusage&bl=${encodeURIComponent(tokens.bl)}&f.sid=${encodeURIComponent(tokens.sid)}&hl=en&_reqid=${reqid}&rt=c`;
+    const freq = JSON.stringify([[[GEMINI_USAGE_RPC, "[]", null, "generic"]]]);
+    const body = `f.req=${encodeURIComponent(freq)}&at=${encodeURIComponent(tokens.at)}&`;
+    const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body,
+        credentials: 'include'
+    });
+    if (!r.ok) return { status: r.status, usage: null };
+    const text = await r.text();
+    // Response is the chunked batchexecute envelope: )]}'\n\n<len>\n[["wrb.fr","jSf9Qc","<json string>",...]]
+    for (const line of text.split('\n')) {
+        const s = line.trim();
+        if (!s.startsWith('[')) continue;
+        try {
+            for (const row of JSON.parse(s)) {
+                if (Array.isArray(row) && row[0] === 'wrb.fr' && row[1] === GEMINI_USAGE_RPC && row[2]) {
+                    return { status: 200, usage: parseGeminiUsage(JSON.parse(row[2])) };
+                }
+            }
+        } catch (e) { /* not the data line — keep scanning */ }
+    }
+    return { status: 200, usage: null };
+}
+
+async function fetchGeminiUsage() {
+    let tokens = await getGeminiTokens(false);
+    if (!tokens) return null;
+    let res = await callGeminiUsageRpc(tokens);
+    // Stale token (session rotated) → 4xx or empty payload. Refresh once and retry.
+    if (!res.usage) {
+        log('debug', 'gemini', `Usage RPC returned no data (HTTP ${res.status}); refreshing tokens`);
+        tokens = await getGeminiTokens(true);
+        if (tokens) res = await callGeminiUsageRpc(tokens);
+    }
+    return res.usage;
+}
+
 async function fetchGemini() {
     log('debug', 'gemini', 'Fetch started');
     try {
@@ -459,15 +569,37 @@ async function fetchGemini() {
             return { Connected: 0, error: 'Not signed in to Google' };
         }
 
-        const cached = await chrome.storage.local.get(['geminiPlanName', 'geminiPlanDetectedAt']);
+        const cached = await chrome.storage.local.get('geminiPlanName');
         const planName = cached.geminiPlanName || 'Unknown';
-        if (planName === 'Unknown') {
-            log('warn', 'gemini', 'Plan unknown - visit gemini.google.com once so the content script can detect the badge');
-        } else {
-            const ageSec = cached.geminiPlanDetectedAt ? Math.round((Date.now() - cached.geminiPlanDetectedAt) / 1000) : -1;
-            log('info', 'gemini', `Fetch success: plan=${planName} (detected ${ageSec}s ago)`);
+
+        // Pull live usage (5-hour + weekly) from gemini.google.com/usage
+        let usage = null;
+        try {
+            usage = await fetchGeminiUsage();
+        } catch (e) {
+            log('warn', 'gemini', 'Usage fetch failed: ' + e.message);
         }
 
+        if (usage && (usage.session || usage.weekly)) {
+            const result = {
+                Connected: 1,
+                HasUsageData: 1,
+                PlanName: planName,
+                SessionPercent: usage.session?.pct ?? 0,
+                SessionReset: formatReset(usage.session?.resetIso),
+                WeeklyPercent: usage.weekly?.pct ?? 0,
+                WeeklyReset: formatReset(usage.weekly?.resetIso)
+            };
+            log('info', 'gemini', `Fetch success: plan=${planName} Session=${result.SessionPercent}% Weekly=${result.WeeklyPercent}%`);
+            return result;
+        }
+
+        // Fallback: logged in but usage unavailable (RPC changed / token issue)
+        if (planName === 'Unknown') {
+            log('warn', 'gemini', 'Plan unknown and no usage - visit gemini.google.com once so the content script can detect the badge');
+        } else {
+            log('info', 'gemini', `Fetch success (plan only): plan=${planName}`);
+        }
         return {
             Connected: 1,
             HasUsageData: 0,

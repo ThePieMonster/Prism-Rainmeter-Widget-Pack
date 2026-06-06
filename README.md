@@ -12,7 +12,7 @@
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D4.svg)](#requirements)
 [![Rainmeter 4.5+](https://img.shields.io/badge/Rainmeter-4.5%2B-orange.svg)](https://www.rainmeter.net/)
 [![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-Install-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/prism-rainmeter/nmlnncddmhjfiahelimfgajdidcobajc)
-[![Version 1.1.0](https://img.shields.io/badge/Version-1.1.0-green.svg)](#)
+[![Version 1.2.0](https://img.shields.io/badge/Version-1.2.0-green.svg)](#)
 
 </div>
 
@@ -67,7 +67,7 @@ Horizontal-bar widgets that display your **paid consumer plan** usage in real ti
 |--------|---------|------|
 | `Claude/Claude.ini` | Claude (Pro / Max) | 5-hour session limit + 7-day weekly limit |
 | `ChatGPT/ChatGPT.ini` | ChatGPT (Plus / Pro) | 3-hour rolling message window |
-| `Gemini/Gemini.ini` | Gemini (Pro / Advanced) | Daily prompt cap |
+| `Gemini/Gemini.ini` | Gemini (Pro / Ultra) | 5-hour usage limit + weekly limit |
 
 Each widget falls back gracefully if the service exposes only plan status (no usage numbers) - you'll see the plan name without a progress bar.
 
@@ -202,7 +202,7 @@ The bridge is optional. Skip it by uninstalling Python or unregistering the `Pri
 
 ### Why a Chrome extension?
 
-Consumer-plan usage (Claude Pro/Max, ChatGPT Plus, Gemini Advanced) **isn't exposed on any public API** - it only lives on the service's own dashboard. The extension runs in the same security context as your browser tabs, so it can hit the same internal endpoints those dashboards use, with the same cookies/JWT you already have. Nothing leaves your machine.
+Consumer-plan usage (Claude Pro/Max, ChatGPT Plus, Gemini Pro/Ultra) **isn't exposed on any public API** - it only lives on the service's own dashboard. The extension runs in the same security context as your browser tabs, so it can hit the same internal endpoints those dashboards use, with the same cookies/JWT you already have. Nothing leaves your machine.
 
 ### Style system
 
