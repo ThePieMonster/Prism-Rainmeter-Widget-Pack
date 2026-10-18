@@ -246,6 +246,9 @@ Make sure you're signed into the corresponding service in the same browser where
 **Widget says "Active - no usage data available"**
 The service is logged in but doesn't report usage windows for your plan or account type, or its usage endpoint changed. The plan badge is still useful confirmation that auth is working.
 
+**Claude shows no plan name**
+The plan is read every few hours from claude.ai's `/api/organizations`, for the organization whose usage the widget shows. The extension names Free, Pro, Max (both the 5x and 20x tiers show as "Max"), Team and Enterprise; when claude.ai reports a plan it doesn't recognize, the label stays blank (the popup shows "Active") instead of guessing. To see what claude.ai returned, set the log level to `debug` in the popup's **Settings** and look for the "Could not determine plan" line on the **Logs** tab.
+
 **Gemini shows no plan name, or the wrong one**
 The plan badge is read from `gemini.google.com` in your default Google account (the one without `/u/1/` in the address). Open Gemini in that account once so the extension can pick it up.
 

@@ -287,14 +287,18 @@ async function discoverClaudeOrgId() {
 // that matches the org we read usage for. It is cached per org and refreshed
 // every few hours (or when the org changes), not every cycle.
 //
-// NOTE: the org object is undocumented and NOT verified against a live
-// response here. capabilities ('claude_max', 'claude_pro', 'raven'),
-// rate_limit_tier (e.g. 'default_claude_max_20x') and raven_type ('team',
-// 'enterprise') are the fields the claude.ai web app is believed to use. Only
-// fixed labels are ever emitted, and anything unrecognised maps to '' so no
-// plan is claimed (the skin then shows no label, the popup shows "Active").
-// If the label stays blank for a known plan, set the log level to Debug: the
-// 'Could not determine plan' line lists the fields that came back.
+// The org object is undocumented. Checked against a live response on
+// 2026-10-18: a Max 20x org has capabilities ['chat', 'claude_max'],
+// rate_limit_tier 'default_claude_max_20x', billing_type 'stripe_subscription'
+// and raven_type null; a Claude Console org on the same account has
+// capabilities ['api', 'api_individual', ...], billing_type 'prepaid' and no
+// plan. Pro ('claude_pro'), Free (only 'chat') and the Claude for Work
+// raven_type values ('team', 'enterprise') follow the same scheme but were
+// not seen live. Only fixed labels are ever emitted, and anything
+// unrecognised maps to '' so no plan is claimed (the skin then shows no
+// label, the popup shows "Active"). If the label stays blank for a known
+// plan, set the log level to Debug: the 'Could not determine plan' line
+// lists the plan fields that came back.
 
 const CLAUDE_PLAN_KEY = 'claudePlan';
 const CLAUDE_PLAN_MAX_AGE_MS = 6 * 60 * 60 * 1000;   // plans rarely change
@@ -309,7 +313,10 @@ function mapClaudePlan(org) {
     const marked = (w) => caps.includes(w) || word(w).test(tier);
 
     if (raven === 'enterprise' || marked('enterprise')) return 'Enterprise';
-    if (raven === 'team' || marked('raven') || marked('team')) return 'Team';
+    if (raven === 'team' || marked('team')) return 'Team';
+    // A Claude for Work org of a type not matched above: 'raven' alone does
+    // not say Team or Enterprise, so claim neither (nor a personal plan)
+    if (raven || caps.includes('raven')) return '';
     if (caps.includes('claude_max') || word('max').test(tier)) return 'Max';
     if (caps.includes('claude_pro') || word('pro').test(tier)) return 'Pro';
     // Free only when the org is plainly a chat-only one with no billing at all
@@ -329,7 +336,8 @@ async function cacheClaudePlanFromOrgs(orgs, orgId) {
     if (!name) {
         log('debug', 'claude', 'Could not determine plan from org', {
             capabilities: org.capabilities, rate_limit_tier: org.rate_limit_tier,
-            raven_type: org.raven_type, billing_type: org.billing_type
+            raven_type: org.raven_type, billing_type: org.billing_type,
+            analytics_subscription_plan: org.analytics_subscription_plan
         });
     }
     await chrome.storage.local.set({ [CLAUDE_PLAN_KEY]: { orgId, name, ok: true, at: Date.now() } });

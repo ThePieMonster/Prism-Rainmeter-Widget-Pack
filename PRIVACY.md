@@ -33,7 +33,13 @@ the extension:
    extension's site access on its Details page in `chrome://extensions`.
 3. Extracts a small set of values from each response: current plan name,
    usage percentages, reset times, and API spend (month to date, today and
-   yesterday).
+   yesterday). The Claude plan name comes from claude.ai's
+   `/api/organizations` list, read every few hours: from your
+   organization's entry the extension uses only its ID and its plan fields
+   (capabilities, rate-limit tier, billing and subscription type), and it
+   leaves the plan name blank when it does not recognize them. At the Debug
+   log level, those plan fields are written to the log when the plan is
+   not recognized.
 4. For data that is not exposed via a clean API - the Gemini plan badge
    and the Google AI Studio spend page - a small content script reads the
    values from the rendered page DOM. The Gemini script only looks at the
