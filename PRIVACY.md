@@ -9,8 +9,8 @@ browser sessions and writes it to a local file that the Rainmeter widget
 pack reads to display usage on your desktop. **Your usage data never
 leaves your machine.** The extension's only network requests go to the AI
 services themselves. There are no servers, no analytics, no telemetry, and
-no third parties. The one exception is a handful of display settings
-(listed below): if you use browser sync, your browser copies them to your
+no third parties. The one exception is a handful of settings (listed
+below): if you use browser sync, your browser copies them to your
 other signed-in browsers.
 
 ## What the extension does
@@ -26,11 +26,13 @@ the extension:
    Studio are covered in item 4). Your browser attaches the session
    cookies it already has for those sites. For a service you are not
    signed in to, the request carries no session and returns no usage
-   data. There is no separate opt-in per service: the **Services**
-   switches in the popup's Settings only show or hide rows in the popup.
-   To stop the extension from reading a service, sign out of it in this
-   browser (for Gemini, that means your Google account), or limit the
-   extension's site access on its Details page in `chrome://extensions`.
+   data. Each service can be turned off under **Data collection** in the
+   popup's Settings (all are on by default). A service that is off is not
+   contacted at all: the extension sends it no requests, does not read
+   its cookies, its content script (item 4) stays idle on its pages, and
+   its desktop widget shows it as not connected until you turn it back
+   on. The **Services** switches above that section only show or hide
+   rows in the popup and do not change what is collected.
 3. Extracts a small set of values from each response: current plan name,
    usage percentages, reset times, and API spend (month to date, today and
    yesterday). The Claude plan name comes from claude.ai's
@@ -50,7 +52,8 @@ the extension:
    content script hands the sign-in token the site keeps in its own
    storage to the service worker, which then fetches your spend from
    `api.openai.com` (see Authentication credentials below). These scripts
-   only run on those sites, while you have them open. (Gemini's usage
+   only run on those sites, while you have them open, and do nothing for
+   a service turned off under Data collection. (Gemini's usage
    percentages are instead fetched from `gemini.google.com`'s own internal
    usage endpoint - the same one the site's Usage page uses.)
 5. Sends the extracted values to a small native messaging host bundled
@@ -58,7 +61,11 @@ the extension:
    Rainmeter `@Resources` folder (see Files on your disk below).
 6. Caches the same values in `chrome.storage.local` so the popup can
    display them without re-fetching, and so a widget can keep showing its
-   last good reading through a brief network error.
+   last good reading through a brief network error. Turning a service off
+   does not delete what is already cached for it: while it is off, that
+   data is neither sent to the native host nor shown in the popup, and the
+   first reading after the service is turned back on replaces it (removing
+   the extension deletes it).
 
 ## What data is processed
 
@@ -73,7 +80,7 @@ the extension:
 | Session token | Gemini anti-CSRF token + page build/session IDs | Local cache only (used to call Gemini's usage endpoint) |
 | OpenAI session key | Dashboard key issued by `api.openai.com` | Service-worker memory only (see Authentication credentials) |
 | Internal logs | "Fetch success: MTD=$1.94" | Local cache only (visible on the popup's Logs tab; up to 200 entries; can be cleared there or turned off) |
-| User settings | Log level, which services the popup shows and in what order, the selected Google AI Studio project | `chrome.storage.sync` (see Where your data goes) |
+| User settings | Log level, which services are turned on under Data collection, which services the popup shows and in what order, the selected Google AI Studio project | `chrome.storage.sync` (see Where your data goes) |
 
 ## What data is NOT collected
 
@@ -112,7 +119,8 @@ To make authenticated requests, the extension relies on:
   returns in exchange for that JWT (the same exchange `platform.openai.com`
   makes itself). It is used only as the bearer token for the spend
   request, and is held in service-worker memory only: it is dropped when
-  the service worker stops or the key is rejected, then obtained again. The
+  the service worker stops, the key is rejected or ChatGPT API is turned
+  off under Data collection, then obtained again. The
   key itself is never stored. At the Debug log level, the log notes when a
   key was obtained, with its last six characters.
 - For ChatGPT, the access token that `chatgpt.com` issues to

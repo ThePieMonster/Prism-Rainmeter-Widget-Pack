@@ -50,6 +50,26 @@ function extensionAlive() {
     try { return !!chrome.runtime?.id; } catch { return false; }
 }
 
+// Gemini API under Settings > Data collection in the popup (on unless set to
+// false). Off, or unreadable, keeps this script idle: it does not touch the
+// page, read anything from it or send anything to the service worker.
+function collectingFrom(setting) {
+    return !setting || setting.geminiApi !== false;
+}
+
+async function collectionEnabled() {
+    try {
+        return collectingFrom((await chrome.storage.sync.get('serviceEnabled')).serviceEnabled);
+    } catch {
+        return false;
+    }
+}
+
+// The last known state, for checks that cannot wait for a storage read (a
+// scrape deciding whether to switch to the next project). Kept current by
+// the storage listener at the bottom.
+let collecting = false;
+
 function onSpendPage() { return /\/spend\b/.test(location.pathname); }
 
 // True while the user has this tab in front of them (visible, and its window
@@ -287,7 +307,8 @@ async function ensureFilters() {
         if (set) await prismLog('debug', 'gemini_api', 'Time range confirmed: This Month');
     }
 
-    const modelCombo = getModelCombobox();
+    // Turned off meanwhile: leave the rest of the page alone
+    const modelCombo = collecting ? getModelCombobox() : null;
     if (modelCombo) {
         const set = await selectComboboxOption(modelCombo, 'All Models');
         if (set) await prismLog('debug', 'gemini_api', 'Model filter confirmed: All Models');
@@ -435,23 +456,23 @@ async function scrapeAllProjects(shouldStop = () => false) {
             if (name !== currentName) {
                 if (!stopped && shouldStop()) {
                     stopped = true;
-                    await prismLog('info', 'gemini_api', `Stopped switching projects after ${i} of ${projectNames.length} (tab in use, page left or extension updated)`);
+                    await prismLog('info', 'gemini_api', `Stopped switching projects after ${i} of ${projectNames.length} (tab in use, page left, turned off or extension updated)`);
                 }
                 if (stopped) {
                     projects.push(failedProject(name));
                     continue;
                 }
 
-                if (!(await switchProject(combo, name, userChanged))) {
+                if (!(await switchProject(combo, name, () => userChanged() || !collecting))) {
                     projects.push(failedProject(name));
                     if (userChanged()) {
                         // The user picked a project before the click: keep it
                         await stopForUser(i);
                         continue;
                     }
-                    // Off /spend the switch was given up, not the option missed;
-                    // the next turn's shouldStop() logs the stop
-                    if (onSpendPage()) {
+                    // Off /spend or turned off, the switch was given up, not the
+                    // option missed; the next turn's shouldStop() logs the stop
+                    if (onSpendPage() && collecting) {
                         await prismLog('warn', 'gemini_api', `Could not find option for project ${i + 1} of ${projectNames.length} after 3 attempts`);
                     }
                     continue;
@@ -459,6 +480,12 @@ async function scrapeAllProjects(shouldStop = () => false) {
                 currentName = name;
                 await wait(2500); // Wait for page to load new project's data
                 await closeDropdown();
+            }
+
+            // Turned off since the scrape started: the page is not read any more
+            if (!collecting) {
+                projects.push(failedProject(name));
+                continue;
             }
 
             // Read only when the page shows this project, so another project's
@@ -530,6 +557,9 @@ let scrapeInProgress = false;
 // started by opening /spend always runs, so first-time setup gets its data.
 async function refreshAndReport(background = false) {
     if (!extensionAlive()) { stopTimers(); return; }
+    // Turned off: leave the page alone. Checked before the in-progress flag
+    // below, which is tested and set with no await in between.
+    if (!collecting || !(await collectionEnabled())) return;
     // Only scrape on the /spend page
     if (!onSpendPage()) return;
     // Prevent concurrent runs: our own project switching changes the URL,
@@ -541,7 +571,7 @@ async function refreshAndReport(background = false) {
     }
     scrapeInProgress = true;
 
-    const shouldStop = () => !extensionAlive() || !onSpendPage() || (background && pageInUse());
+    const shouldStop = () => !extensionAlive() || !collecting || !onSpendPage() || (background && pageInUse());
     let savedFilters = [];
 
     try {
@@ -552,6 +582,10 @@ async function refreshAndReport(background = false) {
         // on the page they went to
         if (!onSpendPage()) {
             await prismLog('debug', 'gemini_api', 'Spend page left before the projects were read; scrape stopped');
+            return;
+        }
+        if (!collecting) {
+            await prismLog('debug', 'gemini_api', 'Turned off in Settings before the projects were read; scrape stopped');
             return;
         }
 
@@ -598,8 +632,13 @@ async function refreshAndReport(background = false) {
             OriginalIndex: originalIndex
         };
 
-        await prismLog('info', 'gemini_api', `Scraped ${projects.length} projects (${summary.FailedCount} failed): allTotal=$${summary.AllTotal} tier=${tier}`);
         if (!extensionAlive()) return; // orphaned mid-scrape: no service worker to send to
+        // Turned off mid-scrape: what was read is dropped, not sent
+        if (!collecting || !(await collectionEnabled())) {
+            await prismLog('debug', 'gemini_api', 'Turned off in Settings during the scrape; spend not sent');
+            return;
+        }
+        await prismLog('info', 'gemini_api', `Scraped ${projects.length} projects (${summary.FailedCount} failed): allTotal=$${summary.AllTotal} tier=${tier}`);
         try {
             await chrome.runtime.sendMessage({ type: 'gemini_api_update', summary });
         } catch {}
@@ -619,26 +658,59 @@ async function refreshAndReport(background = false) {
 console.log('[Prism:gemini_api] content script loaded');
 prismLog('debug', 'gemini_api', `Content script loaded (spend page: ${onSpendPage() ? 'yes' : 'no'})`);
 
-// Interval handles, so an orphaned copy can stop itself
+// Interval handles, so an orphaned or turned-off copy can stop itself
 const timers = [];
+let lastPathname = location.pathname;
+
 function stopTimers() {
     for (const t of timers) clearInterval(t);
     timers.length = 0;
 }
 
-// Initial scrape after page settles (give extra time for Angular to render)
-setTimeout(() => refreshAndReport(), 5000);
-// Re-scrape every 5 minutes
-timers.push(setInterval(() => refreshAndReport(true), 5 * 60 * 1000));
+function startTimers() {
+    if (timers.length) return;
+    // Re-scrape every 5 minutes
+    timers.push(setInterval(() => refreshAndReport(true), 5 * 60 * 1000));
 
-// Re-scrape when user navigates within the SPA (but NOT when we're mid-scrape,
-// since our own project switching changes the ?project= URL param)
-let lastPathname = location.pathname;
-timers.push(setInterval(() => {
-    if (!extensionAlive()) { stopTimers(); return; }
-    // Only watch the pathname, not the search params (which change during iteration)
-    if (location.pathname !== lastPathname) {
-        lastPathname = location.pathname;
-        setTimeout(() => refreshAndReport(), 3000);
+    // Re-scrape when user navigates within the SPA (but NOT when we're mid-scrape,
+    // since our own project switching changes the ?project= URL param)
+    lastPathname = location.pathname;
+    timers.push(setInterval(() => {
+        if (!extensionAlive()) { stopTimers(); return; }
+        // Only watch the pathname, not the search params (which change during iteration)
+        if (location.pathname !== lastPathname) {
+            lastPathname = location.pathname;
+            setTimeout(() => refreshAndReport(), 3000);
+        }
+    }, 2000));
+}
+
+collectionEnabled().then(on => {
+    collecting = on;
+    if (!on) {
+        prismLog('debug', 'gemini_api', 'Gemini API is turned off in Settings; content script idle');
+        return;
     }
-}, 2000));
+    startTimers();
+    // Initial scrape after page settles (give extra time for Angular to render)
+    setTimeout(() => refreshAndReport(), 5000);
+});
+
+// Turned on or off in the popup while this tab stays open. Turning it on
+// scrapes like the 5-minute refresh does (it waits while the tab is in use);
+// turning it off stops a scrape in progress before its next project switch.
+try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'sync' || !changes.serviceEnabled) return;
+        if (!extensionAlive()) { stopTimers(); return; }
+        const on = collectingFrom(changes.serviceEnabled.newValue);
+        if (on === collecting) return;
+        collecting = on;
+        if (on) {
+            startTimers();
+            setTimeout(() => refreshAndReport(true), 3000);
+        } else {
+            stopTimers();
+        }
+    });
+} catch {}

@@ -32,12 +32,34 @@ const SERVICE_ROWS = {
 };
 const SERVICE_KEYS_CANONICAL = Object.keys(SERVICE_ROWS);
 const SERVICE_DEFAULTS = Object.fromEntries(SERVICE_KEYS_CANONICAL.map(k => [k, true]));
+const SERVICE_LABELS = {
+    chatgpt: 'ChatGPT', chatgptApi: 'ChatGPT API', claude: 'Claude',
+    claudeApi: 'Claude API', gemini: 'Gemini', geminiApi: 'Gemini API'
+};
 // True between dragstart and dragend in the Settings service list
 let isDraggingService = false;
 
 async function getServiceVisibility() {
     const stored = await chrome.storage.sync.get(SERVICE_VISIBILITY_KEY).catch(() => ({}));
     return { ...SERVICE_DEFAULTS, ...(stored[SERVICE_VISIBILITY_KEY] || {}) };
+}
+
+// ---- Data collection (per-service on/off) ----
+// Not the visibility above: a service turned off here is not contacted at all
+// (background.js and the content scripts read the same key), and its widget
+// shows its signed-out state. Only an explicit false is off, so every
+// service, including one added by an update, starts on.
+const SERVICE_ENABLED_KEY = 'serviceEnabled';
+
+function enabledFrom(stored) {
+    const saved = stored && typeof stored === 'object' ? stored : {};
+    return Object.fromEntries(SERVICE_KEYS_CANONICAL.map(k => [k, saved[k] !== false]));
+}
+
+// Throws when the setting cannot be read: a toggle must not save "on" for
+// services whose real state is unknown
+async function getServiceEnabled() {
+    return enabledFrom((await chrome.storage.sync.get(SERVICE_ENABLED_KEY))[SERVICE_ENABLED_KEY]);
 }
 
 async function getServiceOrder() {
@@ -101,6 +123,23 @@ async function applyServiceVisibility() {
             if (key in vis) cb.checked = vis[key];
         });
     }
+
+    // 3. Data collection list: same order, switches from the stored setting
+    // (left as they are when it cannot be read)
+    const collectList = document.getElementById('collect-list');
+    if (collectList) {
+        const items = order
+            .map(key => collectList.querySelector(`.collect-item[data-service="${key}"]`))
+            .filter(Boolean);
+        placeInOrder(collectList, items, null);
+        const enabled = await getServiceEnabled().catch(() => null);
+        if (enabled) {
+            collectList.querySelectorAll('.collect-toggle').forEach(cb => {
+                const key = cb.dataset.service;
+                if (key in enabled) cb.checked = enabled[key];
+            });
+        }
+    }
 }
 
 document.querySelectorAll('.service-toggle').forEach(cb => {
@@ -112,13 +151,37 @@ document.querySelectorAll('.service-toggle').forEach(cb => {
     });
 });
 
-// Re-apply when the order or visibility changes outside this popup's own
-// handlers (a second open popup, or Chrome sync from another device). The
-// toggle and drag handlers re-apply directly, so this is not polled.
+// background.js sees the change in storage, logs it and runs an update, so
+// the desktop widget follows within seconds
+document.querySelectorAll('.collect-toggle').forEach(cb => {
+    cb.addEventListener('change', async () => {
+        const key = cb.dataset.service;
+        const on = cb.checked;
+        try {
+            // Read fresh: another popup or a synced browser may have changed
+            // other services since this one opened
+            const current = await getServiceEnabled();
+            current[key] = on;
+            await chrome.storage.sync.set({ [SERVICE_ENABLED_KEY]: current });
+        } catch (e) {
+            cb.checked = !on;
+            showToast('Could not save: ' + e.message, 'error');
+            return;
+        }
+        showToast(`${SERVICE_LABELS[key]}: ${on ? 'on' : 'off, not contacted'}`, 'success');
+        await renderStatus();
+    });
+});
+
+// Re-apply when the order, visibility or data collection changes outside
+// this popup's own handlers (a second open popup, or Chrome sync from another
+// device). The toggle and drag handlers re-apply directly, so this is not polled.
 chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'sync' && (changes[SERVICE_ORDER_KEY] || changes[SERVICE_VISIBILITY_KEY])) {
+    if (area !== 'sync') return;
+    if (changes[SERVICE_ORDER_KEY] || changes[SERVICE_VISIBILITY_KEY] || changes[SERVICE_ENABLED_KEY]) {
         applyServiceVisibility();
     }
+    if (changes[SERVICE_ENABLED_KEY]) renderStatus();
 });
 
 // ---- Drag to reorder services ----
@@ -239,7 +302,7 @@ function setDetailHtml(el, html) { setDetail(el, html, true); }
 function setDetailText(el, text) { setDetail(el, text, false); }
 
 function setPlanBadge(el, connected, planName) {
-    el.classList.remove('connected', 'disconnected', 'unknown');
+    el.classList.remove('connected', 'disconnected', 'unknown', 'off');
     if (!connected) {
         el.textContent = 'Disconnected';
         el.classList.add('disconnected');
@@ -307,8 +370,31 @@ function renderUsageBars(prefix, d, payloadMs) {
     return true;
 }
 
+// A row for a service turned off under Data collection, or turned back on
+// with no update since. The setting decides when it can be read, so a switch
+// shows at once; otherwise the payload's Disabled flag does. Returns false
+// when the row is not in either state and the caller renders it as usual.
+function renderOff(prefix, key, d, enabled) {
+    const off = enabled ? !enabled[key] : d.Disabled === 1;
+    const waiting = !off && d.Disabled === 1;
+    if (!off && !waiting) return false;
+    const badge = document.getElementById(`${prefix}-plan`);
+    badge.classList.remove('connected', 'disconnected', 'unknown', 'off');
+    badge.classList.add(off ? 'off' : 'unknown');
+    badge.textContent = off ? 'Off' : 'Updating';
+    for (const w of ['session', 'weekly']) {
+        const bar = document.getElementById(`${prefix}-bar-${w}`);
+        if (bar) bar.style.display = 'none';
+    }
+    setDetailText(document.getElementById(`${prefix}-detail`), off
+        ? 'Turned off in Settings: not contacted'
+        : 'Turned on: waiting for the next update');
+    return true;
+}
+
 async function renderStatus() {
     const { lastPayload, lastUpdate } = await chrome.storage.local.get(['lastPayload', 'lastUpdate']);
+    const enabled = await getServiceEnabled().catch(() => null);
 
     const lastUpdEl = document.getElementById('last-updated');
     if (lastUpdate) {
@@ -326,85 +412,97 @@ async function renderStatus() {
 
     // ---- Claude ----
     const c = lastPayload.claude || {};
-    setPlanBadge(document.getElementById('claude-plan'), c.Connected, c.PlanName);
-    if (!renderUsageBars('claude', c, payloadMs)) {
-        setDetailText(document.getElementById('claude-detail'),
-            c.Connected ? 'Active - no usage data available' : (c.error || 'Not connected'));
+    if (!renderOff('claude', 'claude', c, enabled)) {
+        setPlanBadge(document.getElementById('claude-plan'), c.Connected, c.PlanName);
+        if (!renderUsageBars('claude', c, payloadMs)) {
+            setDetailText(document.getElementById('claude-detail'),
+                c.Connected ? 'Active - no usage data available' : (c.error || 'Not connected'));
+        }
     }
 
     // ---- ChatGPT ----
     const g = lastPayload.chatgpt || {};
-    setPlanBadge(document.getElementById('chatgpt-plan'), g.Connected, g.PlanName);
-    if (!renderUsageBars('chatgpt', g, payloadMs)) {
-        setDetailText(document.getElementById('chatgpt-detail'),
-            g.Connected ? 'Active - no usage data available' : (g.error || 'Not connected'));
+    if (!renderOff('chatgpt', 'chatgpt', g, enabled)) {
+        setPlanBadge(document.getElementById('chatgpt-plan'), g.Connected, g.PlanName);
+        if (!renderUsageBars('chatgpt', g, payloadMs)) {
+            setDetailText(document.getElementById('chatgpt-detail'),
+                g.Connected ? 'Active - no usage data available' : (g.error || 'Not connected'));
+        }
     }
 
     // ---- Gemini ----
     const m = lastPayload.gemini || {};
-    setPlanBadge(document.getElementById('gemini-plan'), m.Connected, m.PlanName);
-    if (!renderUsageBars('gemini', m, payloadMs)) {
-        const mDetail = document.getElementById('gemini-detail');
-        if (!m.Connected) {
-            setDetailText(mDetail, m.error || 'Not connected');
-        } else if (m.PlanName === 'Unknown') {
-            setDetailHtml(mDetail, `Visit <a href="https://gemini.google.com/" target="_blank" rel="noopener">gemini.google.com</a> to detect plan`);
-        } else {
-            setDetailText(mDetail, 'Active - no usage data available');
+    if (!renderOff('gemini', 'gemini', m, enabled)) {
+        setPlanBadge(document.getElementById('gemini-plan'), m.Connected, m.PlanName);
+        if (!renderUsageBars('gemini', m, payloadMs)) {
+            const mDetail = document.getElementById('gemini-detail');
+            if (!m.Connected) {
+                setDetailText(mDetail, m.error || 'Not connected');
+            } else if (m.PlanName === 'Unknown') {
+                setDetailHtml(mDetail, `Visit <a href="https://gemini.google.com/" target="_blank" rel="noopener">gemini.google.com</a> to detect plan`);
+            } else {
+                setDetailText(mDetail, 'Active - no usage data available');
+            }
         }
     }
 
     // ---- Claude API (platform.claude.com) ----
     const a = lastPayload.claudeApi || {};
-    setPlanBadge(document.getElementById('claude-api-plan'), a.Connected, a.PeriodLabel);
-    const aDetail = document.getElementById('claude-api-detail');
-    if (!a.Connected) {
-        // Signed out: no error, the "Not logged in to ..." text, or HTTP 401/403.
-        // Anything else (rate limit, outage, offline with no recent cache) is
-        // shown as is, so a signed-in user is not told to log in.
-        const aLink = `<a href="https://platform.claude.com/" target="_blank" rel="noopener">platform.claude.com</a>`;
-        const signedOut = !a.error || /Not logged in/.test(a.error) || /\bHTTP 40[13]\b/.test(a.error);
-        setDetailHtml(aDetail, signedOut
-            ? `Not logged into ${aLink}`
-            : `Could not read spend (${escapeHtml(a.error)}) · ${aLink}`);
-    } else {
-        setDetailHtml(aDetail, `<strong>$${a.MonthTotal}</strong> this month · ${costDayLabel(a.DataDay)} $${a.TodayTotal}${a.Stale === 1 ? staleSuffix(a.CachedAtEpoch) : ''}`);
+    if (!renderOff('claude-api', 'claudeApi', a, enabled)) {
+        setPlanBadge(document.getElementById('claude-api-plan'), a.Connected, a.PeriodLabel);
+        const aDetail = document.getElementById('claude-api-detail');
+        if (!a.Connected) {
+            // Signed out: no error, the "Not logged in to ..." text, or HTTP 401/403.
+            // Anything else (rate limit, outage, offline with no recent cache) is
+            // shown as is, so a signed-in user is not told to log in.
+            const aLink = `<a href="https://platform.claude.com/" target="_blank" rel="noopener">platform.claude.com</a>`;
+            const signedOut = !a.error || /Not logged in/.test(a.error) || /HTTP 40[13]/.test(a.error);
+            setDetailHtml(aDetail, signedOut
+                ? `Not logged into ${aLink}`
+                : `Could not read spend (${escapeHtml(a.error)}) · ${aLink}`);
+        } else {
+            setDetailHtml(aDetail, `<strong>$${a.MonthTotal}</strong> this month · ${costDayLabel(a.DataDay)} $${a.TodayTotal}${a.Stale === 1 ? staleSuffix(a.CachedAtEpoch) : ''}`);
+        }
     }
 
     // ---- ChatGPT API (platform.openai.com) ----
     const o = lastPayload.chatgptApi || {};
-    setPlanBadge(document.getElementById('chatgpt-api-plan'), o.Connected, o.PeriodLabel);
-    const oDetail = document.getElementById('chatgpt-api-detail');
-    if (!o.Connected) {
-        // Readable errors (e.g. "Stale - reopen platform.openai.com to refresh")
-        // are shown as is; raw codes keep the generic hint
-        const oUrl = 'https://platform.openai.com/settings/organization/usage';
-        setDetailHtml(oDetail, (o.error && linkifyError(o.error, 'platform.openai.com', oUrl)) ||
-            `Visit <a href="${oUrl}" target="_blank" rel="noopener">platform.openai.com</a> to initialize`);
-    } else {
-        setDetailHtml(oDetail, `<strong>$${o.MonthTotal}</strong> this month · ${costDayLabel(o.DataDay)} $${o.TodayTotal}${o.Stale === 1 ? staleSuffix(o.CachedAtEpoch) : ''}`);
+    if (!renderOff('chatgpt-api', 'chatgptApi', o, enabled)) {
+        setPlanBadge(document.getElementById('chatgpt-api-plan'), o.Connected, o.PeriodLabel);
+        const oDetail = document.getElementById('chatgpt-api-detail');
+        if (!o.Connected) {
+            // Readable errors (e.g. "Stale - reopen platform.openai.com to refresh")
+            // are shown as is; raw codes keep the generic hint
+            const oUrl = 'https://platform.openai.com/settings/organization/usage';
+            setDetailHtml(oDetail, (o.error && linkifyError(o.error, 'platform.openai.com', oUrl)) ||
+                `Visit <a href="${oUrl}" target="_blank" rel="noopener">platform.openai.com</a> to initialize`);
+        } else {
+            setDetailHtml(oDetail, `<strong>$${o.MonthTotal}</strong> this month · ${costDayLabel(o.DataDay)} $${o.TodayTotal}${o.Stale === 1 ? staleSuffix(o.CachedAtEpoch) : ''}`);
+        }
     }
 
     // ---- Gemini API (aistudio.google.com) ----
     const ga = lastPayload.geminiApi || {};
-    setPlanBadge(document.getElementById('gemini-api-plan'), ga.Connected, ga.PeriodLabel);
-    const gaDetail = document.getElementById('gemini-api-detail');
-    // Stale here means some project values were not read in the last scrape
-    // (carried over from an earlier one, or left out of the total), so the
-    // cache time would overstate how fresh they are
-    const gaAll = !ga.ProjectName || ga.ProjectName === 'All Projects';
-    const gaStale = ga.Stale === 1 ? (gaAll ? ' · some projects not refreshed' : ' · not refreshed') : '';
-    if (!ga.Connected) {
-        // e.g. "Stale - visit aistudio.google.com/spend to refresh", or a
-        // selected project that has never been read
-        const gaUrl = 'https://aistudio.google.com/spend';
-        setDetailHtml(gaDetail, (ga.error && linkifyError(ga.error, 'aistudio.google.com/spend', gaUrl)) ||
-            `Visit <a href="${gaUrl}" target="_blank" rel="noopener">aistudio.google.com/spend</a> to initialize`);
-    } else if (ga.HasData) {
-        // Project names come from the scraped page, so they are escaped
-        setDetailHtml(gaDetail, `<strong>$${ga.MonthTotal}</strong> this month · ${escapeHtml(ga.ProjectName || 'All Projects')}${gaStale}`);
-    } else {
-        setDetailText(gaDetail, `${ga.Tier} - no spend this period${gaStale}`);
+    if (!renderOff('gemini-api', 'geminiApi', ga, enabled)) {
+        setPlanBadge(document.getElementById('gemini-api-plan'), ga.Connected, ga.PeriodLabel);
+        const gaDetail = document.getElementById('gemini-api-detail');
+        // Stale here means some project values were not read in the last scrape
+        // (carried over from an earlier one, or left out of the total), so the
+        // cache time would overstate how fresh they are
+        const gaAll = !ga.ProjectName || ga.ProjectName === 'All Projects';
+        const gaStale = ga.Stale === 1 ? (gaAll ? ' · some projects not refreshed' : ' · not refreshed') : '';
+        if (!ga.Connected) {
+            // e.g. "Stale - visit aistudio.google.com/spend to refresh", or a
+            // selected project that has never been read
+            const gaUrl = 'https://aistudio.google.com/spend';
+            setDetailHtml(gaDetail, (ga.error && linkifyError(ga.error, 'aistudio.google.com/spend', gaUrl)) ||
+                `Visit <a href="${gaUrl}" target="_blank" rel="noopener">aistudio.google.com/spend</a> to initialize`);
+        } else if (ga.HasData) {
+            // Project names come from the scraped page, so they are escaped
+            setDetailHtml(gaDetail, `<strong>$${ga.MonthTotal}</strong> this month · ${escapeHtml(ga.ProjectName || 'All Projects')}${gaStale}`);
+        } else {
+            setDetailText(gaDetail, `${ga.Tier} - no spend this period${gaStale}`);
+        }
     }
 
     // Populate the Gemini project selector in Settings if project list is available

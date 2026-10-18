@@ -1304,6 +1304,48 @@ async function recordNativeFailure(error, payloadTimestamp) {
     } catch {}
 }
 
+// ---- Per-service on/off switch ----
+//
+// Settings > Data collection in the popup stores serviceEnabled in
+// chrome.storage.sync, e.g. { claude: false }; a service it does not list is
+// on. A service that is off is never contacted: its fetcher does not run, the
+// data its content script would hand over (openai_auth_token,
+// gemini_api_update) is refused here, and the content scripts check the same
+// setting and stay idle. Its payload entry is { Connected: 0, HasUsageData: 0,
+// Disabled: 1 }, which every host and skin shows as signed out (Disabled is
+// for the popup; hosts ignore it). This is not serviceVisibility, which only
+// hides rows in the popup.
+
+const SERVICE_ENABLED_KEY = 'serviceEnabled';
+const SERVICE_KEYS = ['claude', 'chatgpt', 'gemini', 'claudeApi', 'chatgptApi', 'geminiApi'];
+// Log source per service, as the fetchers use them
+const SERVICE_LOG_SOURCES = {
+    claude: 'claude', chatgpt: 'chatgpt', gemini: 'gemini',
+    claudeApi: 'claude_api', chatgptApi: 'chatgpt_api', geminiApi: 'gemini_api'
+};
+
+// Only an explicit false turns a service off, so a missing or partial
+// setting (first install, a service added by an update) leaves it on
+function enabledFrom(stored) {
+    const saved = stored && typeof stored === 'object' ? stored : {};
+    return Object.fromEntries(SERVICE_KEYS.map(k => [k, saved[k] !== false]));
+}
+
+// { claude: true, ... } for every service. Throws when the setting cannot be
+// read, so nothing is contacted without knowing the user's choice.
+async function getServiceEnabled() {
+    return enabledFrom((await chrome.storage.sync.get(SERVICE_ENABLED_KEY))[SERVICE_ENABLED_KEY]);
+}
+
+// One service, for the content-script handlers: off when unreadable
+async function isServiceEnabled(key) {
+    try { return (await getServiceEnabled())[key]; } catch { return false; }
+}
+
+function disabledResult() {
+    return { Connected: 0, HasUsageData: 0, Disabled: 1 };
+}
+
 // ---- Main loop ----
 
 // Only one update runs at a time. A request that arrives while one is running
@@ -1346,13 +1388,27 @@ function runUpdate() {
 async function doUpdate() {
     log('debug', 'core', 'runUpdate started');
 
+    // Unreadable: skip this update (the widgets keep the last one) rather
+    // than contact a service the user may have turned off
+    let enabled;
+    try {
+        enabled = await getServiceEnabled();
+    } catch (e) {
+        throw new Error('Could not read the Data collection settings, update skipped: ' + e.message);
+    }
+    const off = SERVICE_KEYS.filter(k => !enabled[k]);
+    if (off.length) log('debug', 'core', `Turned off in Settings, not contacted: ${off.join(', ')}`);
+    // The OpenAI session key is only kept while ChatGPT API is on
+    if (!enabled.chatgptApi) openaiSessionKey = null;
+    const read = (key, fetcher) => (enabled[key] ? fetcher() : disabledResult());
+
     const [claude, chatgpt, gemini, claudeApi, chatgptApi, geminiApi] = await Promise.all([
-        fetchClaude(),
-        fetchChatGPT(),
-        fetchGemini(),
-        fetchClaudeApi(),
-        fetchChatGPTApi(),
-        fetchGeminiApi()
+        read('claude', fetchClaude),
+        read('chatgpt', fetchChatGPT),
+        read('gemini', fetchGemini),
+        read('claudeApi', fetchClaudeApi),
+        read('chatgptApi', fetchChatGPTApi),
+        read('geminiApi', fetchGeminiApi)
     ]);
 
     // Error returns only carry Connected:0. The skins multiply HasUsageData
@@ -1480,6 +1536,23 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     }
 });
 
+// A Data collection switch flipped in the popup (or synced from another
+// browser) reaches the widgets right away, not at the next alarm
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync' || !changes[SERVICE_ENABLED_KEY]) return;
+    const was = enabledFrom(changes[SERVICE_ENABLED_KEY].oldValue);
+    const now = enabledFrom(changes[SERVICE_ENABLED_KEY].newValue);
+    const flipped = SERVICE_KEYS.filter(k => was[k] !== now[k]);
+    if (flipped.length === 0) return;
+    for (const k of flipped) {
+        log('info', SERVICE_LOG_SOURCES[k], now[k]
+            ? 'Turned on in Settings'
+            : 'Turned off in Settings: not contacted until it is turned back on');
+    }
+    if (!now.chatgptApi) openaiSessionKey = null;
+    runUpdate().catch(() => {});
+});
+
 // Handle manual trigger from popup + content-script cost uploads
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'log' && msg.entry && sender.id === chrome.runtime.id) {
@@ -1501,6 +1574,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // Content script handed us an Auth0 JWT (or no_jwt error). The SW
         // does the api.openai.com calls so they bypass CORS.
         (async () => {
+            // Turned off: the token is not used and nothing is stored. The
+            // content script checks too; this also covers one that has not
+            // seen the change yet.
+            if (!(await isServiceEnabled('chatgptApi'))) {
+                openaiSessionKey = null;
+                log('debug', 'chatgpt_api', 'Turned off in Settings; token from the page not used');
+                sendResponse({ ok: false, error: 'disabled' });
+                return;
+            }
             if (msg.error || !msg.token) {
                 const errMsg = msg.error || 'no_token';
                 try {
@@ -1546,6 +1628,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     if (msg.type === 'gemini_api_update' && msg.summary) {
         (async () => {
+            if (!(await isServiceEnabled('geminiApi'))) {
+                log('debug', 'gemini_api', 'Turned off in Settings; spend from the page not stored');
+                sendResponse({ ok: false, error: 'disabled' });
+                return;
+            }
             try {
                 // Merge with the last scrape: a project the scraper could not
                 // read keeps its previous value instead of counting as $0.00

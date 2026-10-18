@@ -37,6 +37,21 @@ function extensionAlive() {
     try { return !!chrome.runtime?.id; } catch { return false; }
 }
 
+// ChatGPT API under Settings > Data collection in the popup (on unless set
+// to false). Off, or unreadable, keeps this script idle: it reads nothing
+// from the page and sends nothing to the service worker.
+function collectingFrom(setting) {
+    return !setting || setting.chatgptApi !== false;
+}
+
+async function collectionEnabled() {
+    try {
+        return collectingFrom((await chrome.storage.sync.get('serviceEnabled')).serviceEnabled);
+    } catch {
+        return false;
+    }
+}
+
 function readAuth0Jwt() {
     // The Auth0 SPA SDK stores entries like:
     //   @@auth0spajs@@::<client_id>::https://api.openai.com/v1::openid profile email offline_access
@@ -64,6 +79,8 @@ function listAuth0Keys() {
 
 async function readJwtWithRetry(maxAttempts = 5, delayMs = 2000) {
     for (let i = 1; i <= maxAttempts; i++) {
+        // Turned off during the waits: stop reading the page's storage
+        if (!(await collectionEnabled())) return null;
         const auth = readAuth0Jwt();
         if (auth) return auth;
         if (i < maxAttempts) {
@@ -75,10 +92,12 @@ async function readJwtWithRetry(maxAttempts = 5, delayMs = 2000) {
 }
 
 async function pushAuthToken() {
-    if (!extensionAlive()) { clearInterval(heartbeat); return; }
+    if (!extensionAlive()) { stopHeartbeat(); return; }
+    if (!(await collectionEnabled())) return;
     await prismLog('debug', 'chatgpt_api', 'Looking for Auth0 token');
     const auth = await readJwtWithRetry();
-    if (!extensionAlive()) { clearInterval(heartbeat); return; }
+    if (!extensionAlive()) { stopHeartbeat(); return; }
+    if (!(await collectionEnabled())) return;
     if (!auth) {
         const nearKeys = listAuth0Keys();
         await prismLog('warn', 'chatgpt_api', `No Auth0 JWT found (${nearKeys.length} storage keys match auth/token)`);
@@ -109,6 +128,33 @@ prismLog('debug', 'chatgpt_api', 'Content script loaded');
 // Push token shortly after load, then re-push every 5 minutes (the SW caches
 // the resulting session key for the duration of the OpenAI session, so this
 // is just a heartbeat, usually cheap because no exchange is needed). The
-// handle is kept so an orphaned copy can stop itself.
-const heartbeat = setInterval(pushAuthToken, 5 * 60 * 1000);
-setTimeout(pushAuthToken, 1500);
+// handle is kept so an orphaned copy, or a turned-off one, can stop itself.
+let heartbeat = null;
+let firstPush = null;
+
+function startHeartbeat() {
+    if (heartbeat || !extensionAlive()) return;
+    heartbeat = setInterval(pushAuthToken, 5 * 60 * 1000);
+    firstPush = setTimeout(pushAuthToken, 1500);
+}
+
+function stopHeartbeat() {
+    clearInterval(heartbeat);
+    clearTimeout(firstPush);
+    heartbeat = firstPush = null;
+}
+
+collectionEnabled().then(on => {
+    if (on) startHeartbeat();
+    else prismLog('debug', 'chatgpt_api', 'ChatGPT API is turned off in Settings; content script idle');
+});
+
+// Turned on or off in the popup while this tab stays open
+try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'sync' || !changes.serviceEnabled) return;
+        if (!extensionAlive()) { stopHeartbeat(); return; }
+        if (collectingFrom(changes.serviceEnabled.newValue)) startHeartbeat();
+        else stopHeartbeat();
+    });
+} catch {}

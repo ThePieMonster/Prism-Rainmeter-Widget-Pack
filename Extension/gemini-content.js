@@ -37,6 +37,21 @@
         try { return !!chrome.runtime?.id; } catch { return false; }
     }
 
+    // Gemini under Settings > Data collection in the popup (on unless set to
+    // false). Off, or unreadable, keeps this script idle: it does not look at
+    // the page or store anything.
+    function collectingFrom(setting) {
+        return !setting || setting.gemini !== false;
+    }
+
+    async function collectionEnabled() {
+        try {
+            return collectingFrom((await chrome.storage.sync.get('serviceEnabled')).serviceEnabled);
+        } catch {
+            return false;
+        }
+    }
+
     // Google multi-login index of this tab: /u/1/... or ?authuser=1 is the
     // second signed-in account. The service worker always fetches usage for
     // the default account (index 0), so only that account's plan is stored.
@@ -126,14 +141,18 @@
     let lastReportedPlan = null;
     let observer = null;
     let skippedOtherAccount = false;
+    let running = false;
 
     function stop() {
+        running = false;
         if (observer) observer.disconnect();
+        observer = null;
         clearTimeout(window._prismReportTimer);
     }
 
     async function report() {
         if (!extensionAlive()) { stop(); return; }
+        if (!running || !(await collectionEnabled())) return;
 
         // Another signed-in account's plan would be paired with the default
         // account's usage bars, so leave the stored plan alone
@@ -168,20 +187,42 @@
         }
     }
 
-    // Run after page has loaded enough to render badges
-    if (document.readyState === 'complete') {
-        setTimeout(report, 2000);
-    } else {
-        window.addEventListener('load', () => setTimeout(report, 2000));
+    function start() {
+        if (running || !extensionAlive()) return;
+        running = true;
+
+        // Run after page has loaded enough to render badges
+        if (document.readyState === 'complete') {
+            window._prismReportTimer = setTimeout(report, 2000);
+        } else {
+            window.addEventListener('load', () => {
+                if (running) window._prismReportTimer = setTimeout(report, 2000);
+            }, { once: true });
+        }
+
+        // Also run when we see DOM changes that might include the badge (debounced)
+        observer = new MutationObserver(() => {
+            if (!extensionAlive()) { stop(); return; }
+            clearTimeout(window._prismReportTimer);
+            window._prismReportTimer = setTimeout(report, 1500);
+        });
+        if (document.body) {
+            observer.observe(document.body, { childList: true, subtree: true });
+        }
     }
 
-    // Also run when we see DOM changes that might include the badge (debounced)
-    observer = new MutationObserver(() => {
-        if (!extensionAlive()) { stop(); return; }
-        clearTimeout(window._prismReportTimer);
-        window._prismReportTimer = setTimeout(report, 1500);
+    collectionEnabled().then(on => {
+        if (on) start();
+        else log('debug', 'content', 'Gemini is turned off in Settings; content script idle');
     });
-    if (document.body) {
-        observer.observe(document.body, { childList: true, subtree: true });
-    }
+
+    // Turned on or off in the popup while this tab stays open
+    try {
+        chrome.storage.onChanged.addListener((changes, area) => {
+            if (area !== 'sync' || !changes.serviceEnabled) return;
+            if (!extensionAlive()) { stop(); return; }
+            if (collectingFrom(changes.serviceEnabled.newValue)) start();
+            else stop();
+        });
+    } catch (e) { /* ignore */ }
 })();
