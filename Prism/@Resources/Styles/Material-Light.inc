@@ -52,6 +52,10 @@ barGlowColor=0,0,0,0
 barClaudeColor=204,102,68,240
 barChatGPTColor=16,163,127,240
 barGeminiColor=66,133,244,240
+; Stale data (no recent update): dimmed bar fill, and the color of the
+; "updated N ago" / "cached" note
+barStaleFillColor=60,130,240,92
+barStaleColor=230,81,0,230
 barWidgetWidth=208
 barWidgetHeightCompact=70
 barWidgetHeightExpanded=108

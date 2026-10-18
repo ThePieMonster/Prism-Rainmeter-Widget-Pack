@@ -71,6 +71,8 @@ Horizontal-bar widgets that display your **paid consumer plan** usage in real ti
 
 Each widget falls back gracefully if the service exposes only plan status (no usage numbers) - you'll see the plan name without a progress bar.
 
+When no new data has arrived for 10 minutes (browser closed, extension turned off, PC asleep), a widget doesn't pass its last reading off as live: the bars dim and a small "updated 25m ago" note appears under them (a plan-only widget shows "Last updated 25m ago" instead). The percentages and reset times are then from that last update. The widget goes back to normal within a minute or two of the next update.
+
 ### API Platform Usage
 
 Tracks **developer-platform** spend, separate from consumer plans:
@@ -83,11 +85,15 @@ Tracks **developer-platform** spend, separate from consumer plans:
 
 Claude API spend is fetched every minute. ChatGPT API and Gemini API spend are read through the sites themselves, so they refresh (about every 5 minutes) only while you have `platform.openai.com` or `aistudio.google.com/spend` open in a tab; in between, the widgets keep the last reading. To read every Gemini API project, the AI Studio script switches the spend page's project selector itself, then puts your project and filters back, and it waits while you're using that tab. Pick one project or **All Projects** for the widget in the extension popup's **Settings**.
 
-"Today" and "Yesterday" are UTC days. When an API widget shows a reading that isn't live, it adds a small "cached" note:
+"Today" and "Yesterday" are UTC days. When an API widget shows a reading that isn't live, it adds a small note next to "Month to date". It says "cached" when:
 
 - **Claude API** - after a network or server error it shows its last reading (up to 24 hours old) and labels its rows "Last sync day" / "Day before".
-- **ChatGPT API** - when its reading was taken on an earlier UTC day (the site hasn't been open since); its rows then read "Last sync day" / "Day before".
-- **Gemini API** - when the last scrape couldn't read every project. A reading from an earlier day of the same month is shown without the note.
+- **ChatGPT API** - its reading was taken on an earlier UTC day (the site hasn't been open since); its rows then read "Last sync day" / "Day before".
+- **Gemini API** - the last scrape couldn't read every project.
+
+Once the reading is more than an hour old, the note says how old instead, e.g. "updated 3h ago": no update has arrived (browser closed, PC asleep), or, for ChatGPT API and Gemini API, the site hasn't been open in a tab. Keep `platform.openai.com` or `aistudio.google.com/spend` open in a (pinned) tab to keep those readings current. If no update arrives before the UTC day ends, the Claude API and ChatGPT API rows also switch to "Last sync day" / "Day before".
+
+The stale thresholds (10 minutes for the consumer widgets, an hour for the API widgets) are the `iStaleAfter` value, in seconds, near the top of each widget's `.ini`.
 
 ---
 
@@ -253,7 +259,7 @@ The plan is read every few hours from claude.ai's `/api/organizations`, for the 
 The plan badge is read from `gemini.google.com` in your default Google account (the one without `/u/1/` in the address). Open Gemini in that account once so the extension can pick it up.
 
 **Numbers haven't updated in a while**
-Each widget self-refreshes once a minute. If the number is genuinely stale, the upstream fetch is probably failing - check the extension popup's log feed. Use **Copy** or **Export** to share logs. After a network error or a temporary server error, a consumer widget keeps its last good reading for up to 15 minutes (the popup then says "Cached ... ago"), and the Claude API widget falls back to its last reading with a "cached" note, instead of flipping to "Not connected". The ChatGPT API and Gemini API widgets only refresh while their site is open in a tab (see [API Platform Usage](#api-platform-usage)).
+A widget whose data is more than 10 minutes old (an hour for the API widgets) shows an "updated N ago" note, and the consumer widgets dim their bars (see [Widgets](#widgets)). Make sure the browser with the extension is running; the widgets catch up within a minute or two. Each widget self-refreshes once a minute. If the number is genuinely stale while the browser runs, the upstream fetch is probably failing - check the extension popup's log feed. Use **Copy** or **Export** to share logs. After a network error or a temporary server error, a consumer widget keeps its last good reading for up to 15 minutes (the popup then says "Cached ... ago"), and the Claude API widget falls back to its last reading with a "cached" note, instead of flipping to "Not connected". The ChatGPT API and Gemini API widgets only refresh while their site is open in a tab (see [API Platform Usage](#api-platform-usage)).
 
 **"Native host not found" in Chrome console / extension popup**
 First, re-run `Setup\Setup.bat` and click **Reload** on the Prism extension card at `chrome://extensions`. If the error keeps coming back even after reload, your Chrome install is hitting the bug the bridge poller works around. That's normal, and as long as widgets are updating you can ignore the error. Confirm the bridge is alive by checking `Setup\bridge.log` for recent `OK ts=...` lines (while the direct path works, it logs once that the extension is delivering the data itself and then stays quiet, so no recent lines is normal there), and that a `pythonw.exe` (`pythonw3.x.exe` for Microsoft Store Python) is running with `BridgePoll.py` in its command line.
