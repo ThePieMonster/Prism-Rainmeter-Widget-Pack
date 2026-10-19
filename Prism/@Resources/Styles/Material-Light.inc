@@ -1,7 +1,7 @@
 [Variables]
 ; --- Prism: Material Light ---
-; White elevated card. Same shadow and accent bar as Material-Dark.
-; Dark text on white surface. AM/PM and accent in Material blue.
+; White elevated card. Same shadow as Material-Dark, no accent bar.
+; Dark text on white surface. AM/PM and bar fill in Material blue.
 
 ; Background
 bgType=1

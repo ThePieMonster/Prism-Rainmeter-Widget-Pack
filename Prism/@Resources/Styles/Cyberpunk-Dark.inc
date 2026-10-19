@@ -1,8 +1,8 @@
 [Variables]
 ; --- Prism: Cyberpunk Dark ---
-; Near-black background, sharp corners. Neon cyan time with glow.
+; Near-black background, sharp corners. Neon cyan time.
 ; Magenta date text. JetBrains Mono for the terminal/tech vibe.
-; Thin cyan border. Magenta accent bar at bottom.
+; No border or accent bar.
 
 ; Background
 bgType=1
@@ -36,7 +36,8 @@ colorAmPm=0,255,255,180
 colorShadow=0,0,0,0
 textShadowEffect=None
 glowColor=0,255,255,100
-glowEffect=Glow
+; StringEffect value: None, Shadow or Border (Rainmeter has no Glow effect).
+glowEffect=None
 
 ; Progress Bar
 barFillColor=0,255,255,220
@@ -48,7 +49,8 @@ barLabelSize=10
 barLabelColor=0,255,255,200
 barValueColor=255,0,200,180
 barValueSize=10
-barGlowEffect=Glow
+; StringEffect value: None, Shadow or Border (Rainmeter has no Glow effect).
+barGlowEffect=None
 barGlowColor=0,255,255,80
 barClaudeColor=217,119,87,255
 barChatGPTColor=16,163,127,255

@@ -9,20 +9,32 @@
 //  fetches bypass CORS for any host listed in host_permissions.
 // ==========================================================================
 
-// Minimal logger (content scripts can't importScripts(), so we inline)
+// Minimal logger (content scripts can't importScripts(), so we inline).
+// Never throws: in an orphaned copy of this script (see extensionAlive)
+// chrome.storage throws synchronously.
 async function prismLog(level, source, msg, data) {
-    const { logLevel = 'info' } = await chrome.storage.sync.get('logLevel').catch(() => ({}));
-    if (logLevel === 'off') return;
-    if (logLevel === 'info' && level === 'debug') return;
-    const prefix = `[Prism:${source}]`;
-    const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
-    if (data !== undefined) fn(prefix, msg, data); else fn(prefix, msg);
     try {
-        const { logs = [] } = await chrome.storage.local.get('logs');
-        logs.unshift({ ts: Date.now(), level, source, msg, data });
-        if (logs.length > 200) logs.length = 200;
-        await chrome.storage.local.set({ logs });
+        const { logLevel = 'info' } = await chrome.storage.sync.get('logLevel').catch(() => ({}));
+        if (logLevel === 'off') return;
+        if (logLevel === 'info' && level === 'debug') return;
+        const prefix = `[Prism:${source}]`;
+        const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
+        if (data !== undefined) fn(prefix, msg, data); else fn(prefix, msg);
+        // The service worker owns the 'logs' buffer (logger.js), so hand it
+        // the entry instead of rewriting the array from this tab.
+        const entry = { ts: Date.now(), level, source, msg: String(msg) };
+        if (data !== undefined) {
+            try { entry.data = JSON.parse(JSON.stringify(data)); } catch { entry.data = String(data); }
+        }
+        await chrome.runtime.sendMessage({ type: 'log', entry });
     } catch {}
+}
+
+// False once the extension was updated, reloaded or removed while this tab
+// stayed open. Chrome does not re-inject content scripts into open tabs, so
+// the old copy keeps its timers but can no longer reach the service worker.
+function extensionAlive() {
+    try { return !!chrome.runtime?.id; } catch { return false; }
 }
 
 function readAuth0Jwt() {
@@ -63,11 +75,14 @@ async function readJwtWithRetry(maxAttempts = 5, delayMs = 2000) {
 }
 
 async function pushAuthToken() {
-    await prismLog('debug', 'chatgpt_api', `Looking for Auth0 token (${location.href})`);
+    if (!extensionAlive()) { clearInterval(heartbeat); return; }
+    await prismLog('debug', 'chatgpt_api', 'Looking for Auth0 token');
     const auth = await readJwtWithRetry();
+    if (!extensionAlive()) { clearInterval(heartbeat); return; }
     if (!auth) {
         const nearKeys = listAuth0Keys();
-        await prismLog('warn', 'chatgpt_api', `No Auth0 JWT found. Keys matching auth/token: ${nearKeys.length ? nearKeys.slice(0, 3).join(', ') : '(none)'}`);
+        await prismLog('warn', 'chatgpt_api', `No Auth0 JWT found (${nearKeys.length} storage keys match auth/token)`);
+        if (nearKeys.length) await prismLog('debug', 'chatgpt_api', `Keys matching auth/token: ${nearKeys.slice(0, 3).join(', ')}`);
         try { await chrome.runtime.sendMessage({ type: 'openai_auth_token', error: 'no_jwt' }); } catch {}
         return;
     }
@@ -86,13 +101,14 @@ async function pushAuthToken() {
 
 // Sentinel: log immediately on script load so we can tell apart
 // "didn't load" from "loaded but errored before reaching pushAuthToken".
-console.log('[Prism:chatgpt_api] content script loaded on', location.href);
-prismLog('info', 'chatgpt_api', `Content script loaded on ${location.href}`).catch(e => {
-    console.error('[Prism:chatgpt_api] prismLog failed at load:', e);
-});
+// No URL: platform.openai.com paths and query strings carry project,
+// response and assistant IDs, and exported logs get attached to bug reports.
+console.log('[Prism:chatgpt_api] content script loaded');
+prismLog('debug', 'chatgpt_api', 'Content script loaded');
 
 // Push token shortly after load, then re-push every 5 minutes (the SW caches
 // the resulting session key for the duration of the OpenAI session, so this
-// is just a heartbeat — usually cheap because no exchange is needed).
+// is just a heartbeat, usually cheap because no exchange is needed). The
+// handle is kept so an orphaned copy can stop itself.
+const heartbeat = setInterval(pushAuthToken, 5 * 60 * 1000);
 setTimeout(pushAuthToken, 1500);
-setInterval(pushAuthToken, 5 * 60 * 1000);

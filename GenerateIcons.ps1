@@ -1,14 +1,19 @@
 # ==========================================================================
 #  Resizes icon.png to the three sizes Chrome extensions need (16, 48, 128).
 #  The source image is not modified beyond resizing.
+#
+#  Developer tool: run it from anywhere in a clone. It reads and writes the
+#  repo's Extension\ folder (next to this script), overwriting the tracked
+#  icon16/48/128.png files.
 # ==========================================================================
 
 Add-Type -AssemblyName System.Drawing
 
-$dir = 'C:\Users\Admin\Documents\Rainmeter\Skins\Prism\Extension'
+$repoRoot = Split-Path -Parent $PSCommandPath
+$dir = Join-Path $repoRoot 'Extension'
 $sourcePath = Join-Path $dir 'icon.png'
 
-if (-not (Test-Path $sourcePath)) {
+if (-not (Test-Path -LiteralPath $sourcePath)) {
     Write-Host "ERROR: Source icon not found at $sourcePath" -ForegroundColor Red
     exit 1
 }
@@ -30,7 +35,7 @@ function Resize-Icon {
             $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
             $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
 
-            # Full-frame resize — no cropping, no modification beyond scaling
+            # Full-frame resize: no cropping, no modification beyond scaling
             $destRect = New-Object System.Drawing.Rectangle(0, 0, $size, $size)
             $g.DrawImage($src, $destRect, 0, 0, $src.Width, $src.Height, [System.Drawing.GraphicsUnit]::Pixel)
         } finally {

@@ -10,10 +10,15 @@ UpdateUsage.lock
 Setup/com.prism.usage.json
 
 # Runtime data (written by extension / native host / bridge poller)
+# (the * also covers the rotated NativeHost.log.old and launch.log.old)
 ConsumerData.inc
-NativeHost.log
-Setup/launch.log
+NativeHost.log*
+Setup/launch.log*
 Setup/bridge.log
+
+# Python bytecode (from importing BridgePoll.py, e.g. in tests)
+__pycache__/
+*.pyc
 
 # Build output
 Extension-v*.zip

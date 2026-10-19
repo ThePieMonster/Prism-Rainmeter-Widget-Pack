@@ -1,12 +1,13 @@
 [Variables]
 ; --- Prism: Glassmorphism Dark ---
-; Semi-transparent dark panel with rounded corners and blur.
-; Frosted glass effect. Thin 1px white border.
+; Translucent dark panel with rounded corners.
+; Thin 1px white border.
 
 ; Background
 bgType=1
 bgColor=20,20,30,150
 bgCornerRadius=16
+; Blur only has an effect on Windows 7 (Aero). Windows 8 and later ignore it.
 bgBlur=1
 bgBorderColor=255,255,255,30
 bgBorderThickness=1

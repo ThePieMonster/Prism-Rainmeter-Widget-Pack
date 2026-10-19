@@ -5,6 +5,7 @@ REM
 REM  Double-click this file to install the native messaging host.
 REM  No prompts, no configuration - the extension ID is deterministic
 REM  (baked into manifest.json), so registration just works.
+REM  No need for "Run as administrator": everything it sets up is per user.
 REM ==========================================================================
 
 cd /d "%~dp0"

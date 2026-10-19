@@ -32,6 +32,8 @@ const SERVICE_ROWS = {
 };
 const SERVICE_KEYS_CANONICAL = Object.keys(SERVICE_ROWS);
 const SERVICE_DEFAULTS = Object.fromEntries(SERVICE_KEYS_CANONICAL.map(k => [k, true]));
+// True between dragstart and dragend in the Settings service list
+let isDraggingService = false;
 
 async function getServiceVisibility() {
     const stored = await chrome.storage.sync.get(SERVICE_VISIBILITY_KEY).catch(() => ({}));
@@ -54,6 +56,15 @@ async function saveServiceOrder(order) {
     await chrome.storage.sync.set({ [SERVICE_ORDER_KEY]: order });
 }
 
+// Put nodes in the given order directly before ref (null = at the end). Nodes
+// already in that order are left alone: moving a node detaches it, which clears
+// any text the user has selected inside it.
+function placeInOrder(parent, nodes, ref) {
+    const inPlace = nodes.every((node, i) => node.nextElementSibling === (nodes[i + 1] || ref));
+    if (inPlace) return;
+    for (const node of nodes) parent.insertBefore(node, ref);
+}
+
 async function applyServiceVisibility() {
     const vis = await getServiceVisibility();
     const order = await getServiceOrder();
@@ -61,22 +72,28 @@ async function applyServiceVisibility() {
     // 1. Apply order + visibility to the Status panel
     const statusPanel = document.getElementById('panel-status');
     const lastUpdated = document.getElementById('last-updated');
+    const rows = [];
     for (const key of order) {
         const row = document.getElementById(SERVICE_ROWS[key]);
         if (!row) continue;
         row.style.display = vis[key] ? '' : 'none';
-        // Move to just before last-updated (so rows stay above the footer timestamp)
-        if (lastUpdated && row.parentNode === statusPanel) {
-            statusPanel.insertBefore(row, lastUpdated);
-        }
+        if (row.parentNode === statusPanel) rows.push(row);
     }
+    // Keep the rows just before last-updated (so they stay above the footer timestamp)
+    if (lastUpdated) placeInOrder(statusPanel, rows, lastUpdated);
 
     // 2. Apply order to the Settings service list
     const list = document.getElementById('service-list');
     if (list) {
-        for (const key of order) {
-            const item = list.querySelector(`.service-item[data-service="${key}"]`);
-            if (item) list.appendChild(item);
+        // Not while a drag is in progress: the list is showing the user's
+        // in-progress arrangement, which dragend saves and then re-applies.
+        // This check sits after the awaits above so a call that started
+        // before dragstart cannot snap the dragged row back either.
+        if (!isDraggingService) {
+            const items = order
+                .map(key => list.querySelector(`.service-item[data-service="${key}"]`))
+                .filter(Boolean);
+            placeInOrder(list, items, null);
         }
         // Sync toggle checkboxes
         list.querySelectorAll('.service-toggle').forEach(cb => {
@@ -95,6 +112,15 @@ document.querySelectorAll('.service-toggle').forEach(cb => {
     });
 });
 
+// Re-apply when the order or visibility changes outside this popup's own
+// handlers (a second open popup, or Chrome sync from another device). The
+// toggle and drag handlers re-apply directly, so this is not polled.
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && (changes[SERVICE_ORDER_KEY] || changes[SERVICE_VISIBILITY_KEY])) {
+        applyServiceVisibility();
+    }
+});
+
 // ---- Drag to reorder services ----
 (function setupDragReorder() {
     const list = document.getElementById('service-list');
@@ -104,20 +130,26 @@ document.querySelectorAll('.service-toggle').forEach(cb => {
 
     // Only allow drag when the user grabs the drag handle - prevents accidental
     // drags when the toggle or label is clicked. Draggable is toggled on at
-    // mousedown and off again at dragend.
+    // mousedown on the handle and off again at dragend, or at the next mouseup
+    // anywhere: a press on the handle can be released off it without starting
+    // a drag (mouseup does not fire once a drag has started).
     list.querySelectorAll('.service-item').forEach(item => {
         item.setAttribute('draggable', 'false');
         const handle = item.querySelector('.drag-handle');
-        if (handle) {
-            handle.addEventListener('mousedown', () => item.setAttribute('draggable', 'true'));
-            handle.addEventListener('mouseup',   () => item.setAttribute('draggable', 'false'));
-        }
+        if (handle) handle.addEventListener('mousedown', () => item.setAttribute('draggable', 'true'));
     });
+    const resetDraggable = () => list.querySelectorAll('.service-item[draggable="true"]')
+        .forEach(item => item.setAttribute('draggable', 'false'));
+    document.addEventListener('mouseup', resetDraggable);
+    // Also on every press (capture phase, so before the handle's listener), in
+    // case a mouseup was never delivered
+    document.addEventListener('mousedown', resetDraggable, true);
 
     list.addEventListener('dragstart', (e) => {
         const item = e.target.closest('.service-item');
         if (!item) return;
         dragged = item;
+        isDraggingService = true;
         item.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
         // Required for Firefox compatibility
@@ -131,6 +163,8 @@ document.querySelectorAll('.service-toggle').forEach(cb => {
         }
         list.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
         dragged = null;
+        // Cleared before the save so the re-apply below (and onChanged) runs
+        isDraggingService = false;
         // Save on dragend (covers both drop-inside and drop-outside; the DOM is
         // already at the last-hovered position either way, which matches what
         // the user sees).
@@ -190,6 +224,20 @@ function showToast(msg, kind = 'info') {
 
 // ---- Status renderer ----
 
+// Detail lines are re-rendered on every poll. Assigning innerHTML replaces the
+// child nodes even when the markup is identical, which clears any text the user
+// has selected, so a line is only written when its content changed.
+const renderedDetail = new WeakMap();
+function setDetail(el, value, asHtml) {
+    const key = (asHtml ? 'html:' : 'text:') + value;
+    if (renderedDetail.get(el) === key) return;
+    renderedDetail.set(el, key);
+    if (asHtml) el.innerHTML = value;
+    else el.textContent = value;
+}
+function setDetailHtml(el, html) { setDetail(el, html, true); }
+function setDetailText(el, text) { setDetail(el, text, false); }
+
 function setPlanBadge(el, connected, planName) {
     el.classList.remove('connected', 'disconnected', 'unknown');
     if (!connected) {
@@ -204,9 +252,44 @@ function setPlanBadge(el, connected, planName) {
     }
 }
 
+// "5m ago" for an epoch-ms time, or '' when it is unknown. A time slightly in
+// the future (clock skew) reads as 0s.
+function timeAgo(ms) {
+    if (!Number.isFinite(ms) || ms <= 0) return '';
+    return formatRelativeTime(Math.min(ms, Date.now())) + ' ago';
+}
+
+// Suffix for an API cost row showing a cached read (Stale === 1). Uses the
+// cache time, not "Last updated", which is when the last update ran.
+function staleSuffix(cachedAtEpoch) {
+    const ago = timeAgo(Number(cachedAtEpoch) * 1000);
+    return ago ? ` · as of ${ago}` : ' · cached';
+}
+
+// Label for TodayTotal: 'Today', or 'Oct 16' when the cost snapshot was taken
+// on an earlier UTC day (DataDay is the UTC day TodayTotal belongs to)
+function costDayLabel(dataDay) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataDay || '')) return 'Today';
+    if (dataDay === new Date().toISOString().slice(0, 10)) return 'Today';
+    const day = new Date(dataDay + 'T00:00:00Z');
+    if (Number.isNaN(day.getTime())) return 'Today';
+    return day.toLocaleString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+// An error message with its last mention of linkText turned into a link, or
+// null when it does not mention linkText (raw codes like HTTP 401)
+function linkifyError(error, linkText, url) {
+    const html = escapeHtml(error);
+    const text = escapeHtml(linkText);
+    const i = html.lastIndexOf(text);
+    if (i < 0) return null;
+    return `${html.slice(0, i)}<a href="${url}" target="_blank" rel="noopener">${text}</a>${html.slice(i + text.length)}`;
+}
+
 // Session + weekly bars shared by the consumer rows (Claude, ChatGPT, Gemini).
 // Returns false when there is no usage data, so the caller fills in the detail text.
-function renderUsageBars(prefix, d) {
+// payloadMs is when the payload was built (AgeSeconds counts back from then).
+function renderUsageBars(prefix, d, payloadMs) {
     const detail = document.getElementById(`${prefix}-detail`);
     const barSession = document.getElementById(`${prefix}-bar-session`);
     const barWeekly = document.getElementById(`${prefix}-bar-weekly`);
@@ -214,7 +297,11 @@ function renderUsageBars(prefix, d) {
     barSession.style.display = show ? 'block' : 'none';
     barWeekly.style.display = show ? 'block' : 'none';
     if (!show) return false;
-    detail.innerHTML = `Session <strong>${d.SessionPercent}%</strong> used · ${d.SessionReset || ''}<br>Weekly <strong>${d.WeeklyPercent}%</strong> used · ${d.WeeklyReset || ''}`;
+    // Stale: reused from the last good read after a transient failure
+    const cached = d.Stale === 1
+        ? `<br>Cached ${timeAgo(payloadMs - Number(d.AgeSeconds) * 1000)}`.trimEnd()
+        : '';
+    setDetailHtml(detail, `Session <strong>${d.SessionPercent}%</strong> used · ${d.SessionReset || ''}<br>Weekly <strong>${d.WeeklyPercent}%</strong> used · ${d.WeeklyReset || ''}${cached}`);
     barSession.querySelector('.service-bar-fill').style.width = (d.SessionPercent || 0) + '%';
     barWeekly.querySelector('.service-bar-fill').style.width = (d.WeeklyPercent || 0) + '%';
     return true;
@@ -225,7 +312,9 @@ async function renderStatus() {
 
     const lastUpdEl = document.getElementById('last-updated');
     if (lastUpdate) {
-        const ago = Math.round((Date.now() - lastUpdate) / 1000);
+        // Clamped at 0: a lastUpdate in the future (the clock was set back
+        // since) would otherwise read as a negative age
+        const ago = Math.max(0, Math.round((Date.now() - lastUpdate) / 1000));
         const txt = ago < 60 ? `${ago}s ago` : `${Math.floor(ago / 60)}m ago`;
         lastUpdEl.textContent = `Last updated ${txt}`;
     } else {
@@ -233,34 +322,35 @@ async function renderStatus() {
     }
 
     if (!lastPayload) return;
+    const payloadMs = Date.parse(lastPayload.timestamp);
 
     // ---- Claude ----
     const c = lastPayload.claude || {};
     setPlanBadge(document.getElementById('claude-plan'), c.Connected, c.PlanName);
-    if (!renderUsageBars('claude', c)) {
-        document.getElementById('claude-detail').textContent =
-            c.Connected ? 'Active - no usage data available' : (c.error || 'Not connected');
+    if (!renderUsageBars('claude', c, payloadMs)) {
+        setDetailText(document.getElementById('claude-detail'),
+            c.Connected ? 'Active - no usage data available' : (c.error || 'Not connected'));
     }
 
     // ---- ChatGPT ----
     const g = lastPayload.chatgpt || {};
     setPlanBadge(document.getElementById('chatgpt-plan'), g.Connected, g.PlanName);
-    if (!renderUsageBars('chatgpt', g)) {
-        document.getElementById('chatgpt-detail').textContent =
-            g.Connected ? 'Active - no usage data available' : (g.error || 'Not connected');
+    if (!renderUsageBars('chatgpt', g, payloadMs)) {
+        setDetailText(document.getElementById('chatgpt-detail'),
+            g.Connected ? 'Active - no usage data available' : (g.error || 'Not connected'));
     }
 
     // ---- Gemini ----
     const m = lastPayload.gemini || {};
     setPlanBadge(document.getElementById('gemini-plan'), m.Connected, m.PlanName);
-    if (!renderUsageBars('gemini', m)) {
+    if (!renderUsageBars('gemini', m, payloadMs)) {
         const mDetail = document.getElementById('gemini-detail');
         if (!m.Connected) {
-            mDetail.textContent = m.error || 'Not connected';
+            setDetailText(mDetail, m.error || 'Not connected');
         } else if (m.PlanName === 'Unknown') {
-            mDetail.innerHTML = `Visit <a href="https://gemini.google.com/" target="_blank" rel="noopener">gemini.google.com</a> to detect plan`;
+            setDetailHtml(mDetail, `Visit <a href="https://gemini.google.com/" target="_blank" rel="noopener">gemini.google.com</a> to detect plan`);
         } else {
-            mDetail.textContent = 'Active - no usage data available';
+            setDetailText(mDetail, 'Active - no usage data available');
         }
     }
 
@@ -269,9 +359,16 @@ async function renderStatus() {
     setPlanBadge(document.getElementById('claude-api-plan'), a.Connected, a.PeriodLabel);
     const aDetail = document.getElementById('claude-api-detail');
     if (!a.Connected) {
-        aDetail.innerHTML = `Not logged into <a href="https://platform.claude.com/" target="_blank" rel="noopener">platform.claude.com</a>`;
+        // Signed out: no error, the "Not logged in to ..." text, or HTTP 401/403.
+        // Anything else (rate limit, outage, offline with no recent cache) is
+        // shown as is, so a signed-in user is not told to log in.
+        const aLink = `<a href="https://platform.claude.com/" target="_blank" rel="noopener">platform.claude.com</a>`;
+        const signedOut = !a.error || /Not logged in/.test(a.error) || /\bHTTP 40[13]\b/.test(a.error);
+        setDetailHtml(aDetail, signedOut
+            ? `Not logged into ${aLink}`
+            : `Could not read spend (${escapeHtml(a.error)}) · ${aLink}`);
     } else {
-        aDetail.innerHTML = `<strong>$${a.MonthTotal}</strong> this month · Today $${a.TodayTotal}`;
+        setDetailHtml(aDetail, `<strong>$${a.MonthTotal}</strong> this month · ${costDayLabel(a.DataDay)} $${a.TodayTotal}${a.Stale === 1 ? staleSuffix(a.CachedAtEpoch) : ''}`);
     }
 
     // ---- ChatGPT API (platform.openai.com) ----
@@ -279,21 +376,35 @@ async function renderStatus() {
     setPlanBadge(document.getElementById('chatgpt-api-plan'), o.Connected, o.PeriodLabel);
     const oDetail = document.getElementById('chatgpt-api-detail');
     if (!o.Connected) {
-        oDetail.innerHTML = `Visit <a href="https://platform.openai.com/settings/organization/usage" target="_blank" rel="noopener">platform.openai.com</a> to initialize`;
+        // Readable errors (e.g. "Stale - reopen platform.openai.com to refresh")
+        // are shown as is; raw codes keep the generic hint
+        const oUrl = 'https://platform.openai.com/settings/organization/usage';
+        setDetailHtml(oDetail, (o.error && linkifyError(o.error, 'platform.openai.com', oUrl)) ||
+            `Visit <a href="${oUrl}" target="_blank" rel="noopener">platform.openai.com</a> to initialize`);
     } else {
-        oDetail.innerHTML = `<strong>$${o.MonthTotal}</strong> this month · Today $${o.TodayTotal}`;
+        setDetailHtml(oDetail, `<strong>$${o.MonthTotal}</strong> this month · ${costDayLabel(o.DataDay)} $${o.TodayTotal}${o.Stale === 1 ? staleSuffix(o.CachedAtEpoch) : ''}`);
     }
 
     // ---- Gemini API (aistudio.google.com) ----
     const ga = lastPayload.geminiApi || {};
     setPlanBadge(document.getElementById('gemini-api-plan'), ga.Connected, ga.PeriodLabel);
     const gaDetail = document.getElementById('gemini-api-detail');
+    // Stale here means some project values were not read in the last scrape
+    // (carried over from an earlier one, or left out of the total), so the
+    // cache time would overstate how fresh they are
+    const gaAll = !ga.ProjectName || ga.ProjectName === 'All Projects';
+    const gaStale = ga.Stale === 1 ? (gaAll ? ' · some projects not refreshed' : ' · not refreshed') : '';
     if (!ga.Connected) {
-        gaDetail.innerHTML = `Visit <a href="https://aistudio.google.com/spend" target="_blank" rel="noopener">aistudio.google.com/spend</a> to initialize`;
+        // e.g. "Stale - visit aistudio.google.com/spend to refresh", or a
+        // selected project that has never been read
+        const gaUrl = 'https://aistudio.google.com/spend';
+        setDetailHtml(gaDetail, (ga.error && linkifyError(ga.error, 'aistudio.google.com/spend', gaUrl)) ||
+            `Visit <a href="${gaUrl}" target="_blank" rel="noopener">aistudio.google.com/spend</a> to initialize`);
     } else if (ga.HasData) {
-        gaDetail.innerHTML = `<strong>$${ga.MonthTotal}</strong> this month · ${ga.ProjectName || 'All Projects'}`;
+        // Project names come from the scraped page, so they are escaped
+        setDetailHtml(gaDetail, `<strong>$${ga.MonthTotal}</strong> this month · ${escapeHtml(ga.ProjectName || 'All Projects')}${gaStale}`);
     } else {
-        gaDetail.textContent = `${ga.Tier} - no spend this period`;
+        setDetailText(gaDetail, `${ga.Tier} - no spend this period${gaStale}`);
     }
 
     // Populate the Gemini project selector in Settings if project list is available
@@ -316,14 +427,21 @@ async function renderStatus() {
                 projectSelect.appendChild(opt);
             }
         }
-        projectSelect.value = geminiApiProject;
+        // The saved project can drop out of the list (renamed or deleted in AI
+        // Studio, or a scrape that only saw the current project). background.js
+        // then reports All Projects, so show that instead of a blank select.
+        // The preference is kept and applies again if the project comes back.
+        const listed = [...projectSelect.options].some(o => o.value === geminiApiProject);
+        projectSelect.value = listed ? geminiApiProject : '__all__';
     }
 }
 
 // ---- Logs renderer ----
 
+// Clamped at 0, like the footer: an entry from before the clock was set back
+// is in the future and would otherwise read as a negative age
 function formatRelativeTime(ts) {
-    const sec = Math.round((Date.now() - ts) / 1000);
+    const sec = Math.max(0, Math.round((Date.now() - ts) / 1000));
     if (sec < 60) return sec + 's';
     const min = Math.floor(sec / 60);
     if (min < 60) return min + 'm';
@@ -336,25 +454,33 @@ function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Last markup written to #logs-list, so an unchanged list is not rebuilt
+let renderedLogsHtml = null;
+
 async function renderLogs() {
     const listEl = document.getElementById('logs-list');
     const { logs = [] } = await chrome.storage.local.get('logs');
 
-    if (logs.length === 0) {
-        listEl.innerHTML = '<div class="empty">No logs yet</div>';
-        return;
+    // The markup leaves out the relative timestamps (filled in below), so it
+    // only changes when the entries do. Rebuilding replaces every row, which
+    // clears any text the user has selected in the list.
+    const html = logs.length === 0
+        ? '<div class="empty">No logs yet</div>'
+        : logs.slice(0, 100).map(entry => `<div class="log-entry ${escapeHtml(entry.level)}">
+            <span class="ts" data-ts="${Number(entry.ts)}"></span>
+            <span class="lvl">${escapeHtml(entry.level)}</span>
+            <span class="src">${escapeHtml(entry.source)}</span>
+            <span class="msg">${escapeHtml(entry.msg)}</span>
+        </div>`).join('');
+    if (html !== renderedLogsHtml) {
+        listEl.innerHTML = html;
+        renderedLogsHtml = html;
     }
 
-    const html = logs.slice(0, 100).map(entry => {
-        const ts = formatRelativeTime(entry.ts);
-        return `<div class="log-entry ${entry.level}">
-            <span class="ts">${ts}</span>
-            <span class="lvl">${entry.level}</span>
-            <span class="src">${entry.source}</span>
-            <span class="msg">${escapeHtml(entry.msg)}</span>
-        </div>`;
-    }).join('');
-    listEl.innerHTML = html;
+    listEl.querySelectorAll('.ts[data-ts]').forEach(span => {
+        const ts = formatRelativeTime(Number(span.dataset.ts));
+        if (span.textContent !== ts) span.textContent = ts;
+    });
 }
 
 // ---- Log level ----
@@ -387,7 +513,11 @@ document.getElementById('gemini-project').addEventListener('change', async (e) =
 // ---- Clear logs ----
 
 document.getElementById('clear-logs').addEventListener('click', async () => {
-    await chrome.storage.local.set({ logs: [] });
+    // Clear through logger.js's write queue and lock: a plain set here could
+    // land under a log write already in flight, which then puts the old
+    // entries back.
+    if (typeof self.prismClearLogs === 'function') await self.prismClearLogs();
+    else await chrome.storage.local.set({ logs: [] });
     await self.prismLog('info', 'popup', 'Logs cleared');
     showToast('Logs cleared', 'success');
     await renderLogs();
@@ -465,11 +595,13 @@ refreshBtn.addEventListener('click', async () => {
     refreshBtn.disabled = true;
     showToast('Refreshing...', 'info');
     try {
-        await chrome.runtime.sendMessage({ action: 'refresh' });
+        const res = await chrome.runtime.sendMessage({ action: 'refresh' });
         await new Promise(r => setTimeout(r, 600));
         await renderStatus();
         await renderLogs();
-        showToast('Updated', 'success');
+        // background.js replies {ok:false, error} when the update itself failed
+        if (res && res.ok === false) showToast('Refresh failed: ' + (res.error || 'unknown error'), 'error');
+        else showToast('Updated', 'success');
     } catch (err) {
         showToast('Error: ' + err.message, 'error');
     } finally {
@@ -488,10 +620,21 @@ refreshBtn.addEventListener('click', async () => {
     await renderLogs();
 })();
 
-// Live polling while popup is open
+// True while the user has text selected inside the panel that is showing
+function hasSelectionInActivePanel() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false;
+    const panel = document.querySelector('.panel.active');
+    return !!panel && sel.getRangeAt(0).intersectsNode(panel);
+}
+
+// Live polling while popup is open. Service order and visibility are not
+// polled: the storage.onChanged listener above re-applies them on change.
 const pollInterval = setInterval(async () => {
+    // Hold the view still while the user has text selected in it, so the
+    // selection survives long enough to copy. Updates resume once it clears.
+    if (hasSelectionInActivePanel()) return;
     await renderStatus();
-    await applyServiceVisibility();
     await renderLogs();
 }, 2000);
 

@@ -2,7 +2,7 @@
 ; --- Prism: Cyberpunk Light ---
 ; Light lavender background keeping cyberpunk character.
 ; Purple replaces cyan as primary neon. Teal date text.
-; Same sharp corners and monospace font.
+; Same sharp corners and monospace font. No border or accent bar.
 
 ; Background
 bgType=1
@@ -36,7 +36,8 @@ colorAmPm=100,0,180,180
 colorShadow=0,0,0,0
 textShadowEffect=None
 glowColor=100,0,180,80
-glowEffect=Glow
+; StringEffect value: None, Shadow or Border (Rainmeter has no Glow effect).
+glowEffect=None
 
 ; Progress Bar
 barFillColor=100,0,180,220
@@ -48,7 +49,8 @@ barLabelSize=10
 barLabelColor=100,0,180,220
 barValueColor=0,160,170,180
 barValueSize=10
-barGlowEffect=Glow
+; StringEffect value: None, Shadow or Border (Rainmeter has no Glow effect).
+barGlowEffect=None
 barGlowColor=100,0,180,60
 barClaudeColor=204,102,68,240
 barChatGPTColor=16,163,127,240

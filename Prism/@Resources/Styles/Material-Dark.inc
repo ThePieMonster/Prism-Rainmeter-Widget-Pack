@@ -2,7 +2,7 @@
 ; --- Prism: Material Dark ---
 ; Elevated dark card (Material 3 surface). No border.
 ; Shadow beneath for "elevated surface" effect.
-; Roboto font. Blue accent bar at top. AM/PM picks up accent blue.
+; Roboto font, no accent bar. AM/PM picks up accent blue.
 
 ; Background
 bgType=1

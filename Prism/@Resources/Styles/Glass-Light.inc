@@ -1,12 +1,13 @@
 [Variables]
 ; --- Prism: Glassmorphism Light ---
-; Frosted white glass panel. Dark text on translucent white.
+; Translucent white glass panel. Dark text on translucent white.
 ; Same rounded shape as Glass-Dark.
 
 ; Background
 bgType=1
 bgColor=255,255,255,120
 bgCornerRadius=16
+; Blur only has an effect on Windows 7 (Aero). Windows 8 and later ignore it.
 bgBlur=1
 bgBorderColor=255,255,255,60
 bgBorderThickness=1
