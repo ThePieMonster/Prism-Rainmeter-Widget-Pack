@@ -17,9 +17,13 @@ ClaudeWeeklyReset=
 ChatGPTConsumerConnected=0
 ChatGPTHasUsageData=0
 ChatGPTPlanName=
+ChatGPTSessionPercent=0
+ChatGPTSessionReset=
+ChatGPTWeeklyPercent=0
+ChatGPTWeeklyReset=
 ChatGPTMessagePercent=0
 ChatGPTMessageReset=
-ChatGPTMessageLabel=Messages (3hr)
+ChatGPTMessageLabel=Usage
 
 GeminiConsumerConnected=0
 GeminiHasUsageData=0

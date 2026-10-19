@@ -1,6 +1,6 @@
 # Privacy Policy - Prism Rainmeter Widget Pack
 
-_Last updated: June 2026_
+_Last updated: October 2026_
 
 ## Summary
 
@@ -68,6 +68,10 @@ To make authenticated requests, the extension reads:
   domain (used as request credentials).
 - For OpenAI Platform, an Auth0 JWT that the website itself stores in
   `localStorage` (used as a request bearer token).
+- For ChatGPT, the access token that `chatgpt.com` issues to
+  its own web app via `/api/auth/session` (used as a request bearer token
+  to read your Codex usage limits). It is requested fresh on each refresh,
+  held in memory only for that request, and never stored or logged.
 - For Gemini, an anti-CSRF token and the page's build/session identifiers
   embedded in the `gemini.google.com` HTML. These are required to call
   Gemini's internal usage endpoint, and are cached in `chrome.storage.local`

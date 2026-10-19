@@ -241,7 +241,8 @@ def one_pass(last_seen_ts):
         log(
             f"OK ts={new_ts} -> "
             f"Claude={c.get('PlanName')}/{c.get('SessionPercent')}% "
-            f"ChatGPT={cg.get('PlanName')} Gemini={g.get('PlanName')} "
+            f"ChatGPT={cg.get('PlanName')}/{cg.get('SessionPercent')}% "
+            f"Gemini={g.get('PlanName')}/{g.get('SessionPercent')}% "
             f"ClaudeApi=${ca.get('MonthTotal')}"
         )
         return new_ts

@@ -23,9 +23,9 @@ function formatReset(isoStr) {
     if (diffMin < 1) return 'Resets now';
     if (diffMin < 60) return 'Resets in ' + Math.ceil(diffMin) + ' min';
     if (diffMin < 1440) {
-        const hrs = Math.floor(diffMin / 60);
-        const mins = Math.ceil(diffMin % 60);
-        return 'Resets in ' + hrs + 'h ' + mins + 'm';
+        // Round up once on the total so 299.5 min reads "5h 0m", not "4h 60m"
+        const total = Math.ceil(diffMin);
+        return 'Resets in ' + Math.floor(total / 60) + 'h ' + (total % 60) + 'm';
     }
     return 'Resets ' + reset.toLocaleDateString('en-US', {weekday:'short'}) + ' ' + reset.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'});
 }
@@ -99,37 +99,115 @@ async function getClaudeOrgId() {
     return null;
 }
 
+// ---- ChatGPT consumer usage (Codex 5-hour + weekly limits) ----
+//
+// ChatGPT plans meter Codex (and the agentic features that share its pool)
+// with a 5-hour rolling window plus a weekly cap, the "Usage remaining" numbers
+// in the ChatGPT app's profile menu. The ChatGPT/Codex clients read them from
+// backend-api/wham/usage, which needs the bearer token chatgpt.com hands its
+// own web app via /api/auth/session. We fetch that token fresh each cycle and
+// only hold it in memory for the request; it is never stored or logged.
+//
+// Response shape (only the fields we use):
+//   { plan_type: "plus",
+//     rate_limit: { primary_window:   { used_percent, limit_window_seconds: 18000,  reset_at },
+//                   secondary_window: { used_percent, limit_window_seconds: 604800, reset_at } } }
+
+const CHATGPT_PLAN_NAMES = {
+    free: 'Free', go: 'Go', plus: 'Plus', pro: 'Pro', team: 'Team',
+    business: 'Business', enterprise: 'Enterprise', edu: 'Edu', education: 'Edu'
+};
+
+function formatChatGPTPlan(raw) {
+    if (!raw) return 'Unknown';
+    const key = String(raw).toLowerCase();
+    if (CHATGPT_PLAN_NAMES[key]) return CHATGPT_PLAN_NAMES[key];
+    // Unmapped plan (e.g. "pro_lite"): title-case it rather than show the raw id
+    return key.split(/[_\s-]+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+}
+
+function parseChatGPTUsage(data) {
+    // Classify by window length rather than trusting primary/secondary order:
+    // anything a day or shorter is the session window, longer is weekly.
+    const out = {};
+    const rl = data?.rate_limit;
+    for (const w of [rl?.primary_window, rl?.secondary_window]) {
+        if (!w || typeof w.used_percent !== 'number') continue;
+        const resetSec = typeof w.reset_at === 'number' ? w.reset_at
+            : typeof w.reset_after_seconds === 'number' ? Date.now() / 1000 + w.reset_after_seconds
+            : null;
+        const slot = {
+            pct: Math.max(0, Math.min(100, Math.round(w.used_percent))),
+            resetIso: resetSec ? new Date(resetSec * 1000).toISOString() : null
+        };
+        const isWeekly = typeof w.limit_window_seconds === 'number'
+            ? w.limit_window_seconds > 86400
+            : !!out.session;  // no length given: first window is session, second weekly
+        if (isWeekly && !out.weekly) out.weekly = slot;
+        else if (!out.session) out.session = slot;
+        else if (!out.weekly) out.weekly = slot;
+    }
+    return out;
+}
+
 async function fetchChatGPT() {
     log('debug', 'chatgpt', 'Fetch started');
     try {
-        const r = await fetch('https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27', {
-            credentials: 'include'
-        });
-        if (!r.ok) {
-            log('error', 'chatgpt', `accounts/check returned HTTP ${r.status}`);
-            return { Connected: 0, error: `HTTP ${r.status}` };
+        const sr = await fetch('https://chatgpt.com/api/auth/session', { credentials: 'include' });
+        if (!sr.ok) {
+            log('error', 'chatgpt', `auth/session returned HTTP ${sr.status}`);
+            return { Connected: 0, error: `HTTP ${sr.status}` };
         }
-        const data = await r.json();
+        // Logged-out sessions come back as 200 with an empty object
+        const session = await sr.json();
+        const accessToken = session?.accessToken;
+        if (!accessToken) {
+            log('warn', 'chatgpt', 'Not signed in to chatgpt.com (no session)');
+            return { Connected: 0, error: 'Not logged in to chatgpt.com' };
+        }
+        const accountId = session.account?.id;
+        let planName = formatChatGPTPlan(session.account?.planType);
 
-        const acct = data.accounts?.default;
-        if (!acct) {
-            log('warn', 'chatgpt', 'accounts/check returned no default account');
-            return { Connected: 0, error: 'No account data' };
+        let usage = null;
+        try {
+            const headers = { 'Authorization': `Bearer ${accessToken}`, 'Accept': 'application/json' };
+            if (accountId) headers['ChatGPT-Account-Id'] = accountId;
+            const r = await fetch('https://chatgpt.com/backend-api/wham/usage', { credentials: 'include', headers });
+            if (r.ok) {
+                const data = await r.json();
+                if (data?.plan_type) planName = formatChatGPTPlan(data.plan_type);
+                usage = parseChatGPTUsage(data);
+            } else {
+                log('warn', 'chatgpt', `wham/usage returned HTTP ${r.status}`);
+            }
+        } catch (e) {
+            log('warn', 'chatgpt', 'Usage fetch failed: ' + e.message);
         }
 
-        const planMap = {
-            'chatgptguestplan': 'Free Plan',
-            'chatgptfreeplan': 'Free Plan',
-            'chatgptplusplan': 'Plus',
-            'chatgptproplan': 'Pro',
-            'chatgptteamplan': 'Team',
-            'chatgptbusinessplan': 'Business',
-            'chatgptenterpriseplan': 'Enterprise'
-        };
-        const rawPlan = acct.entitlement?.subscription_plan || acct.account?.plan_type || 'unknown';
-        const planName = planMap[rawPlan] || rawPlan;
+        if (usage && (usage.session || usage.weekly)) {
+            // A window the plan doesn't report still gets a bar; say so rather
+            // than show a blank reset that reads like an untouched 0%.
+            const result = {
+                Connected: 1,
+                HasUsageData: 1,
+                PlanName: planName,
+                SessionPercent: usage.session?.pct ?? 0,
+                SessionReset: usage.session ? formatReset(usage.session.resetIso) : 'Not reported',
+                WeeklyPercent: usage.weekly?.pct ?? 0,
+                WeeklyReset: usage.weekly ? formatReset(usage.weekly.resetIso) : 'Not reported'
+            };
+            // Legacy fields for widget packs older than 1.3, whose native host
+            // still maps ChatGPTMessage* into a single bar: use whichever window
+            // is closer to its limit, so a hit weekly cap doesn't read as 0%.
+            const legacy = usage.weekly && (!usage.session || usage.weekly.pct > usage.session.pct) ? 'Weekly' : 'Session';
+            result.MessagePercent = result[legacy + 'Percent'];
+            result.MessageReset = result[legacy + 'Reset'];
+            log('info', 'chatgpt', `Fetch success: plan=${planName} Session=${result.SessionPercent}% Weekly=${result.WeeklyPercent}%`);
+            return result;
+        }
 
-        log('info', 'chatgpt', `Fetch success: plan=${planName}`);
+        // Fallback: logged in but no usage windows (plan without limits, or endpoint changed)
+        log('info', 'chatgpt', `Fetch success (plan only): plan=${planName}`);
         return {
             Connected: 1,
             HasUsageData: 0,
@@ -638,6 +716,12 @@ async function runUpdate() {
         fetchChatGPTApi(),
         fetchGeminiApi()
     ]);
+
+    // Error returns only carry Connected:0. The skins multiply HasUsageData
+    // into their Hidden/height formulas, so an empty value is a syntax error.
+    for (const s of [claude, chatgpt, gemini]) {
+        if (s.HasUsageData == null) s.HasUsageData = 0;
+    }
 
     const payload = {
         timestamp: new Date().toISOString(),

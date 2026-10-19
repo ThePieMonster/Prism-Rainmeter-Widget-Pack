@@ -204,6 +204,22 @@ function setPlanBadge(el, connected, planName) {
     }
 }
 
+// Session + weekly bars shared by the consumer rows (Claude, ChatGPT, Gemini).
+// Returns false when there is no usage data, so the caller fills in the detail text.
+function renderUsageBars(prefix, d) {
+    const detail = document.getElementById(`${prefix}-detail`);
+    const barSession = document.getElementById(`${prefix}-bar-session`);
+    const barWeekly = document.getElementById(`${prefix}-bar-weekly`);
+    const show = !!(d.Connected && d.HasUsageData);
+    barSession.style.display = show ? 'block' : 'none';
+    barWeekly.style.display = show ? 'block' : 'none';
+    if (!show) return false;
+    detail.innerHTML = `Session <strong>${d.SessionPercent}%</strong> used · ${d.SessionReset || ''}<br>Weekly <strong>${d.WeeklyPercent}%</strong> used · ${d.WeeklyReset || ''}`;
+    barSession.querySelector('.service-bar-fill').style.width = (d.SessionPercent || 0) + '%';
+    barWeekly.querySelector('.service-bar-fill').style.width = (d.WeeklyPercent || 0) + '%';
+    return true;
+}
+
 async function renderStatus() {
     const { lastPayload, lastUpdate } = await chrome.storage.local.get(['lastPayload', 'lastUpdate']);
 
@@ -221,58 +237,31 @@ async function renderStatus() {
     // ---- Claude ----
     const c = lastPayload.claude || {};
     setPlanBadge(document.getElementById('claude-plan'), c.Connected, c.PlanName);
-    const claudeDetail = document.getElementById('claude-detail');
-    const claudeBarSession = document.getElementById('claude-bar-session');
-    const claudeBarWeekly = document.getElementById('claude-bar-weekly');
-
-    if (!c.Connected) {
-        claudeDetail.textContent = c.error || 'Not connected';
-        claudeBarSession.style.display = 'none';
-        claudeBarWeekly.style.display = 'none';
-    } else if (c.HasUsageData) {
-        claudeDetail.innerHTML = `Session <strong>${c.SessionPercent}%</strong> · ${c.SessionReset || ''}<br>Weekly <strong>${c.WeeklyPercent}%</strong> · ${c.WeeklyReset || ''}`;
-        claudeBarSession.style.display = 'block';
-        claudeBarSession.querySelector('.service-bar-fill').style.width = (c.SessionPercent || 0) + '%';
-        claudeBarWeekly.style.display = 'block';
-        claudeBarWeekly.querySelector('.service-bar-fill').style.width = (c.WeeklyPercent || 0) + '%';
-    } else {
-        claudeDetail.textContent = 'Active - no usage data available';
-        claudeBarSession.style.display = 'none';
-        claudeBarWeekly.style.display = 'none';
+    if (!renderUsageBars('claude', c)) {
+        document.getElementById('claude-detail').textContent =
+            c.Connected ? 'Active - no usage data available' : (c.error || 'Not connected');
     }
 
     // ---- ChatGPT ----
     const g = lastPayload.chatgpt || {};
     setPlanBadge(document.getElementById('chatgpt-plan'), g.Connected, g.PlanName);
-    const gDetail = document.getElementById('chatgpt-detail');
-    if (!g.Connected) gDetail.textContent = g.error || 'Not connected';
-    else if (g.HasUsageData) gDetail.innerHTML = `<strong>${g.MessagePercent}%</strong> messages used`;
-    else gDetail.textContent = 'Active - no usage data available';
+    if (!renderUsageBars('chatgpt', g)) {
+        document.getElementById('chatgpt-detail').textContent =
+            g.Connected ? 'Active - no usage data available' : (g.error || 'Not connected');
+    }
 
     // ---- Gemini ----
     const m = lastPayload.gemini || {};
     setPlanBadge(document.getElementById('gemini-plan'), m.Connected, m.PlanName);
-    const mDetail = document.getElementById('gemini-detail');
-    const geminiBarSession = document.getElementById('gemini-bar-session');
-    const geminiBarWeekly = document.getElementById('gemini-bar-weekly');
-    if (!m.Connected) {
-        mDetail.textContent = m.error || 'Not connected';
-        geminiBarSession.style.display = 'none';
-        geminiBarWeekly.style.display = 'none';
-    } else if (m.HasUsageData) {
-        mDetail.innerHTML = `Session <strong>${m.SessionPercent}%</strong> · ${m.SessionReset || ''}<br>Weekly <strong>${m.WeeklyPercent}%</strong> · ${m.WeeklyReset || ''}`;
-        geminiBarSession.style.display = 'block';
-        geminiBarSession.querySelector('.service-bar-fill').style.width = (m.SessionPercent || 0) + '%';
-        geminiBarWeekly.style.display = 'block';
-        geminiBarWeekly.querySelector('.service-bar-fill').style.width = (m.WeeklyPercent || 0) + '%';
-    } else if (m.PlanName === 'Unknown') {
-        mDetail.innerHTML = `Visit <a href="https://gemini.google.com/" target="_blank" rel="noopener">gemini.google.com</a> to detect plan`;
-        geminiBarSession.style.display = 'none';
-        geminiBarWeekly.style.display = 'none';
-    } else {
-        mDetail.textContent = 'Active - no usage data available';
-        geminiBarSession.style.display = 'none';
-        geminiBarWeekly.style.display = 'none';
+    if (!renderUsageBars('gemini', m)) {
+        const mDetail = document.getElementById('gemini-detail');
+        if (!m.Connected) {
+            mDetail.textContent = m.error || 'Not connected';
+        } else if (m.PlanName === 'Unknown') {
+            mDetail.innerHTML = `Visit <a href="https://gemini.google.com/" target="_blank" rel="noopener">gemini.google.com</a> to detect plan`;
+        } else {
+            mDetail.textContent = 'Active - no usage data available';
+        }
     }
 
     // ---- Claude API (platform.claude.com) ----

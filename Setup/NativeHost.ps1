@@ -139,13 +139,13 @@ try {
 ;    {Service}ConsumerConnected: 0=not logged in, 1=logged in
 ;    {Service}HasUsageData: 0=plan status only, 1=usage bars available
 ;    {Service}PlanName: e.g. "Max", "Plus", "Pro", "Free Plan"
-;    {Service}Bar*: percentage + reset (only when HasUsageData=1)
+;    {Service}Session*/Weekly*: percentage + reset (only when HasUsageData=1)
 ;    ClaudeApi*: month-to-date / today / yesterday spend in USD
 ; ==========================================================================
 
 ; --- Claude ---
-ClaudeConsumerConnected=$(Format-Value $claude.Connected)
-ClaudeHasUsageData=$(Format-Value $claude.HasUsageData)
+ClaudeConsumerConnected=$(Format-Bool $claude.Connected)
+ClaudeHasUsageData=$(Format-Bool $claude.HasUsageData)
 ClaudePlanName=$(Format-Value $claude.PlanName)
 ClaudeSessionPercent=$(Format-Percent $claude.SessionPercent)
 ClaudeSessionReset=$(Format-Value $claude.SessionReset)
@@ -153,16 +153,21 @@ ClaudeWeeklyPercent=$(Format-Percent $claude.WeeklyPercent)
 ClaudeWeeklyReset=$(Format-Value $claude.WeeklyReset)
 
 ; --- ChatGPT ---
-ChatGPTConsumerConnected=$(Format-Value $chatgpt.Connected)
-ChatGPTHasUsageData=$(Format-Value $chatgpt.HasUsageData)
+ChatGPTConsumerConnected=$(Format-Bool $chatgpt.Connected)
+ChatGPTHasUsageData=$(Format-Bool $chatgpt.HasUsageData)
 ChatGPTPlanName=$(Format-Value $chatgpt.PlanName)
+ChatGPTSessionPercent=$(Format-Percent $chatgpt.SessionPercent)
+ChatGPTSessionReset=$(Format-Value $chatgpt.SessionReset)
+ChatGPTWeeklyPercent=$(Format-Percent $chatgpt.WeeklyPercent)
+ChatGPTWeeklyReset=$(Format-Value $chatgpt.WeeklyReset)
+; Deprecated: single-bar fields read by ChatGPT skins older than 1.3
 ChatGPTMessagePercent=$(Format-Percent $chatgpt.MessagePercent)
 ChatGPTMessageReset=$(Format-Value $chatgpt.MessageReset)
-ChatGPTMessageLabel=Messages (3hr)
+ChatGPTMessageLabel=Usage
 
 ; --- Gemini ---
-GeminiConsumerConnected=$(Format-Value $gemini.Connected)
-GeminiHasUsageData=$(Format-Value $gemini.HasUsageData)
+GeminiConsumerConnected=$(Format-Bool $gemini.Connected)
+GeminiHasUsageData=$(Format-Bool $gemini.HasUsageData)
 GeminiPlanName=$(Format-Value $gemini.PlanName)
 GeminiSessionPercent=$(Format-Percent $gemini.SessionPercent)
 GeminiSessionReset=$(Format-Value $gemini.SessionReset)
@@ -205,7 +210,7 @@ ConsumerUpdateStatus=OK
         $content | Out-File -FilePath $tempPath -Encoding ASCII -Force
         Move-Item -Path $tempPath -Destination $consumerPath -Force
 
-        Write-Log "Wrote ConsumerData.inc - Claude=$(Format-Value $claude.PlanName)/$(Format-Value $claude.SessionPercent)% ChatGPT=$(Format-Value $chatgpt.PlanName) Gemini=$(Format-Value $gemini.PlanName) ClaudeApi=`$$(Format-Value $claudeApi.MonthTotal) ChatGPTApi=`$$(Format-Value $chatgptApi.MonthTotal) GeminiApi=$(Format-Value $geminiApi.RequestCount)req"
+        Write-Log "Wrote ConsumerData.inc - Claude=$(Format-Value $claude.PlanName)/$(Format-Value $claude.SessionPercent)% ChatGPT=$(Format-Value $chatgpt.PlanName)/$(Format-Value $chatgpt.SessionPercent)% Gemini=$(Format-Value $gemini.PlanName)/$(Format-Value $gemini.SessionPercent)% ClaudeApi=`$$(Format-Value $claudeApi.MonthTotal) ChatGPTApi=`$$(Format-Value $chatgptApi.MonthTotal) GeminiApi=`$$(Format-Value $geminiApi.MonthTotal)"
 
         Write-Message @{ ok = $true; timestamp = $timestamp }
     }

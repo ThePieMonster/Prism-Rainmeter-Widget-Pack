@@ -12,7 +12,7 @@
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D4.svg)](#requirements)
 [![Rainmeter 4.5+](https://img.shields.io/badge/Rainmeter-4.5%2B-orange.svg)](https://www.rainmeter.net/)
 [![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-Install-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/prism-rainmeter/nmlnncddmhjfiahelimfgajdidcobajc)
-[![Version 1.2.0](https://img.shields.io/badge/Version-1.2.0-green.svg)](#)
+[![Version 1.3.0](https://img.shields.io/badge/Version-1.3.0-green.svg)](#)
 
 </div>
 
@@ -66,7 +66,7 @@ Horizontal-bar widgets that display your **paid consumer plan** usage in real ti
 | Widget | Service | Bars |
 |--------|---------|------|
 | `Claude/Claude.ini` | Claude (Pro / Max) | 5-hour session limit + 7-day weekly limit |
-| `ChatGPT/ChatGPT.ini` | ChatGPT (Plus / Pro) | 3-hour rolling message window |
+| `ChatGPT/ChatGPT.ini` | ChatGPT (Plus / Pro) | 5-hour session limit + weekly limit (Codex usage, shown as % used) |
 | `Gemini/Gemini.ini` | Gemini (Pro / Ultra) | 5-hour usage limit + weekly limit |
 
 Each widget falls back gracefully if the service exposes only plan status (no usage numbers) - you'll see the plan name without a progress bar.
@@ -223,7 +223,7 @@ Switching style/theme rewrites `Settings.inc` and refreshes all skins, so visual
 Make sure you're signed into the corresponding service in the same browser where the extension is loaded. Open the extension popup → **Logs** to see what the last fetch returned. Click **Refresh** to retry immediately.
 
 **Widget says "Active - no usage data available"**
-The service is logged in but doesn't expose usage numbers for your plan tier (e.g., ChatGPT Free). The plan badge is still useful confirmation that auth is working.
+The service is logged in but doesn't report usage windows for your plan or account type, or its usage endpoint changed. The plan badge is still useful confirmation that auth is working.
 
 **Numbers haven't updated in a while**
 Each widget self-refreshes once a minute. If the number is genuinely stale, the upstream fetch is probably failing - check the extension popup's log feed. Use **Copy** or **Export** to share logs.

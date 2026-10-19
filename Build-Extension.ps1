@@ -5,7 +5,7 @@
 #  single source of truth for the extension's display name).
 #
 #  Usage:
-#    .\Build-Extension.ps1                    # builds Extension-v1.0.0.zip
+#    .\Build-Extension.ps1                    # builds Extension-v<manifest version>.zip
 #    .\Build-Extension.ps1 -OutputDir .\dist  # custom output folder
 #    .\Build-Extension.ps1 -KeepKey           # keep the manifest "key" field
 # ==========================================================================
@@ -66,7 +66,8 @@ foreach ($f in $includeFiles) {
 if (-not $KeepKey) {
     $staged = Get-Content (Join-Path $staging "manifest.json") -Raw | ConvertFrom-Json
     $staged.PSObject.Properties.Remove("key")
-    $staged | ConvertTo-Json -Depth 10 | Out-File (Join-Path $staging "manifest.json") -Encoding UTF8
+    # WriteAllText rather than Out-File: PowerShell 5.1's UTF8 encoding adds a BOM
+    [System.IO.File]::WriteAllText((Join-Path $staging "manifest.json"), ($staged | ConvertTo-Json -Depth 10), (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "  Stripped 'key' from manifest.json (use -KeepKey to keep it)" -ForegroundColor DarkGray
 }
 
