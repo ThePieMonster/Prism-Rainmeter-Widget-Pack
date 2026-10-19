@@ -1306,7 +1306,7 @@ async function recordNativeFailure(error, payloadTimestamp) {
 
 // ---- Per-service on/off switch ----
 //
-// Settings > Data collection in the popup stores serviceEnabled in
+// The Collect switches in the popup's Settings store serviceEnabled in
 // chrome.storage.sync, e.g. { claude: false }; a service it does not list is
 // on. A service that is off is never contacted: its fetcher does not run, the
 // data its content script would hand over (openai_auth_token,
@@ -1536,7 +1536,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     }
 });
 
-// A Data collection switch flipped in the popup (or synced from another
+// A Collect switch flipped in the popup (or synced from another
 // browser) reaches the widgets right away, not at the next alarm
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync' || !changes[SERVICE_ENABLED_KEY]) return;

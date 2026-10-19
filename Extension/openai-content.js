@@ -37,7 +37,7 @@ function extensionAlive() {
     try { return !!chrome.runtime?.id; } catch { return false; }
 }
 
-// ChatGPT API under Settings > Data collection in the popup (on unless set
+// ChatGPT API's Collect switch in the popup's Settings (on unless set
 // to false). Off, or unreadable, keeps this script idle: it reads nothing
 // from the page and sends nothing to the service worker.
 function collectingFrom(setting) {

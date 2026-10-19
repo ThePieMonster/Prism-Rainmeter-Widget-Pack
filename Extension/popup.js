@@ -44,7 +44,7 @@ async function getServiceVisibility() {
     return { ...SERVICE_DEFAULTS, ...(stored[SERVICE_VISIBILITY_KEY] || {}) };
 }
 
-// ---- Data collection (per-service on/off) ----
+// ---- Data collection: the per-service Collect switches ----
 // Not the visibility above: a service turned off here is not contacted at all
 // (background.js and the content scripts read the same key), and its widget
 // shows its signed-out state. Only an explicit false is off, so every
@@ -124,21 +124,14 @@ async function applyServiceVisibility() {
         });
     }
 
-    // 3. Data collection list: same order, switches from the stored setting
+    // 3. Collect switches (in the same rows), from the stored setting
     // (left as they are when it cannot be read)
-    const collectList = document.getElementById('collect-list');
-    if (collectList) {
-        const items = order
-            .map(key => collectList.querySelector(`.collect-item[data-service="${key}"]`))
-            .filter(Boolean);
-        placeInOrder(collectList, items, null);
-        const enabled = await getServiceEnabled().catch(() => null);
-        if (enabled) {
-            collectList.querySelectorAll('.collect-toggle').forEach(cb => {
-                const key = cb.dataset.service;
-                if (key in enabled) cb.checked = enabled[key];
-            });
-        }
+    const enabled = await getServiceEnabled().catch(() => null);
+    if (enabled) {
+        document.querySelectorAll('.collect-toggle').forEach(cb => {
+            const key = cb.dataset.service;
+            if (key in enabled) cb.checked = enabled[key];
+        });
     }
 }
 
@@ -370,7 +363,7 @@ function renderUsageBars(prefix, d, payloadMs) {
     return true;
 }
 
-// A row for a service turned off under Data collection, or turned back on
+// A row for a service whose Collect switch is off, or turned back on
 // with no update since. The setting decides when it can be read, so a switch
 // shows at once; otherwise the payload's Disabled flag does. Returns false
 // when the row is not in either state and the caller renders it as usual.

@@ -188,7 +188,10 @@
   }
   .setting-label { font-size: 13px; color: #666; flex-shrink: 0; }
   .setting-hint { font-size: 11px; color: #888; line-height: 1.4; margin: -2px 0 6px; }
-  .collect-list .setting-row { padding: 4px 8px 4px 4px; }
+  /* Show / Collect headings, centred over the two switches in each row */
+  .service-cols { display: flex; justify-content: flex-end; gap: 12px; padding: 0 8px 0 4px; }
+  .service-cols span { display: flex; justify-content: center; width: 34px; font-size: 10px; color: #999; white-space: nowrap; }
+  .service-item .toggle + .toggle { margin-left: 12px; }
   .setting-select {
     padding: 4px 8px;
     margin-left: 12px;
@@ -468,81 +471,55 @@
 <div class="panel" id="panel-settings">
   <div class="setting-section">
     <div class="setting-title">Services <span style="font-weight: 400; text-transform: none; letter-spacing: 0; color: #999; margin-left: 4px;">drag to reorder</span></div>
-    <div class="setting-hint">Shows or hides each row in this popup only. A hidden service is still read and its desktop widget keeps updating; to stop that, use Data collection below.</div>
+    <div class="setting-hint">Show only hides the row in this popup. Turn Collect off to stop Prism contacting that service at all; its desktop widget then shows it as not connected.</div>
+    <div class="service-cols" aria-hidden="true"><span>Show</span><span>Collect</span></div>
     <div class="service-list" id="service-list">
       <div class="setting-row service-item" data-service="chatgpt">
         <span class="drag-handle" aria-label="Drag to reorder"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="3" r="1.3"/><circle cx="11" cy="3" r="1.3"/><circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/><circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/></svg></span>
         <span class="setting-label" style="flex: 1;">ChatGPT</span>
-        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="chatgpt" checked><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="chatgpt" aria-label="Show ChatGPT in this popup" checked><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" class="collect-toggle" data-service="chatgpt" aria-label="Collect ChatGPT usage" checked><span class="toggle-slider"></span></label>
       </div>
       <div class="setting-row service-item" data-service="chatgptApi">
         <span class="drag-handle" aria-label="Drag to reorder"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="3" r="1.3"/><circle cx="11" cy="3" r="1.3"/><circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/><circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/></svg></span>
         <span class="setting-label" style="flex: 1;">ChatGPT API</span>
-        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="chatgptApi" checked><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="chatgptApi" aria-label="Show ChatGPT API in this popup" checked><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" class="collect-toggle" data-service="chatgptApi" aria-label="Collect ChatGPT API spend" checked><span class="toggle-slider"></span></label>
       </div>
       <div class="setting-row service-item" data-service="claude">
         <span class="drag-handle" aria-label="Drag to reorder"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="3" r="1.3"/><circle cx="11" cy="3" r="1.3"/><circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/><circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/></svg></span>
         <span class="setting-label" style="flex: 1;">Claude</span>
-        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="claude" checked><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="claude" aria-label="Show Claude in this popup" checked><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" class="collect-toggle" data-service="claude" aria-label="Collect Claude usage" checked><span class="toggle-slider"></span></label>
       </div>
       <div class="setting-row service-item" data-service="claudeApi">
         <span class="drag-handle" aria-label="Drag to reorder"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="3" r="1.3"/><circle cx="11" cy="3" r="1.3"/><circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/><circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/></svg></span>
         <span class="setting-label" style="flex: 1;">Claude API</span>
-        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="claudeApi" checked><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="claudeApi" aria-label="Show Claude API in this popup" checked><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" class="collect-toggle" data-service="claudeApi" aria-label="Collect Claude API spend" checked><span class="toggle-slider"></span></label>
       </div>
       <div class="setting-row service-item" data-service="gemini">
         <span class="drag-handle" aria-label="Drag to reorder"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="3" r="1.3"/><circle cx="11" cy="3" r="1.3"/><circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/><circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/></svg></span>
         <span class="setting-label" style="flex: 1;">Gemini</span>
-        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="gemini" checked><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="gemini" aria-label="Show Gemini in this popup" checked><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" class="collect-toggle" data-service="gemini" aria-label="Collect Gemini usage" checked><span class="toggle-slider"></span></label>
       </div>
       <div class="setting-row service-item" data-service="geminiApi">
         <span class="drag-handle" aria-label="Drag to reorder"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="3" r="1.3"/><circle cx="11" cy="3" r="1.3"/><circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/><circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/></svg></span>
         <span class="setting-label" style="flex: 1;">Gemini API</span>
-        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="geminiApi" checked><span class="toggle-slider"></span></label>
-      </div>
-    </div>
-  </div>
-  <div class="setting-section">
-    <div class="setting-title">Data collection</div>
-    <div class="setting-hint">Turn a service off to stop Prism contacting it: nothing is requested from it or read from its pages, and its desktop widget shows it as not connected. Every service is on by default.</div>
-    <div class="collect-list" id="collect-list">
-      <div class="setting-row collect-item" data-service="chatgpt">
-        <span class="setting-label" style="flex: 1;">ChatGPT</span>
-        <label class="toggle"><input type="checkbox" class="collect-toggle" data-service="chatgpt" aria-label="Collect ChatGPT usage" checked><span class="toggle-slider"></span></label>
-      </div>
-      <div class="setting-row collect-item" data-service="chatgptApi">
-        <span class="setting-label" style="flex: 1;">ChatGPT API</span>
-        <label class="toggle"><input type="checkbox" class="collect-toggle" data-service="chatgptApi" aria-label="Collect ChatGPT API spend" checked><span class="toggle-slider"></span></label>
-      </div>
-      <div class="setting-row collect-item" data-service="claude">
-        <span class="setting-label" style="flex: 1;">Claude</span>
-        <label class="toggle"><input type="checkbox" class="collect-toggle" data-service="claude" aria-label="Collect Claude usage" checked><span class="toggle-slider"></span></label>
-      </div>
-      <div class="setting-row collect-item" data-service="claudeApi">
-        <span class="setting-label" style="flex: 1;">Claude API</span>
-        <label class="toggle"><input type="checkbox" class="collect-toggle" data-service="claudeApi" aria-label="Collect Claude API spend" checked><span class="toggle-slider"></span></label>
-      </div>
-      <div class="setting-row collect-item" data-service="gemini">
-        <span class="setting-label" style="flex: 1;">Gemini</span>
-        <label class="toggle"><input type="checkbox" class="collect-toggle" data-service="gemini" aria-label="Collect Gemini usage" checked><span class="toggle-slider"></span></label>
-      </div>
-      <div class="setting-row collect-item" data-service="geminiApi">
-        <span class="setting-label" style="flex: 1;">Gemini API</span>
+        <label class="toggle"><input type="checkbox" class="service-toggle" data-service="geminiApi" aria-label="Show Gemini API in this popup" checked><span class="toggle-slider"></span></label>
         <label class="toggle"><input type="checkbox" class="collect-toggle" data-service="geminiApi" aria-label="Collect Gemini API spend" checked><span class="toggle-slider"></span></label>
       </div>
     </div>
   </div>
   <div class="setting-section">
-    <div class="setting-title">Gemini API</div>
+    <div class="setting-title">Preferences</div>
     <div class="setting-row">
-      <span class="setting-label">Project</span>
+      <span class="setting-label">Gemini API project</span>
       <select class="setting-select" id="gemini-project">
         <option value="__all__">All Projects</option>
       </select>
     </div>
-  </div>
-  <div class="setting-section">
-    <div class="setting-title">Logging</div>
     <div class="setting-row">
       <span class="setting-label">Log level</span>
       <select class="setting-select" id="log-level">

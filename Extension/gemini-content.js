@@ -37,7 +37,7 @@
         try { return !!chrome.runtime?.id; } catch { return false; }
     }
 
-    // Gemini under Settings > Data collection in the popup (on unless set to
+    // Gemini's Collect switch in the popup's Settings (on unless set to
     // false). Off, or unreadable, keeps this script idle: it does not look at
     // the page or store anything.
     function collectingFrom(setting) {

@@ -1,7 +1,7 @@
 Companion extension for the Prism Rainmeter widget pack. Tracks your AI service usage and feeds it to desktop widgets, so you can see plan usage limits and API spend at a glance without opening a browser tab.
 
 == What's new in 1.4 ==
-- New Settings > Data collection switches: turn a service off and the extension stops contacting it entirely (no requests, no reading of its pages), and its desktop widget shows it as not connected. Every service is on by default. The existing Services switches still only hide rows in the popup.
+- New Collect switch for each service in Settings: turn it off and the extension stops contacting that service entirely (no requests, no reading of its pages), and its desktop widget shows it as not connected. Every service is on by default. The Show switch next to it still only hides the row in the popup.
 - Claude plan detection now reads your account's plan instead of always showing "Max".
 - A brief network error or server hiccup no longer flips Claude, ChatGPT or Gemini usage to "Not connected": the last good reading is shown for up to 15 minutes instead.
 - API spend that is not a live reading is now marked: Claude API spend shown after an error, OpenAI Platform spend taken on an earlier day, and Gemini API spend when a project could not be read.
@@ -24,14 +24,14 @@ Companion extension for the Prism Rainmeter widget pack. Tracks your AI service 
 - Google AI Studio - monthly spend, spend cap and tier
 
 == How it works ==
-The extension uses your existing browser sessions on each service. You stay logged in as normal; the extension reads the same usage data the website shows you and displays it in its popup. If the Prism widget pack is installed, it also hands the data to a small local helper that writes it to a file the Rainmeter widgets read. OpenAI Platform and Google AI Studio spend update while you have that site open in a tab. Any service you don't want tracked can be turned off under Settings > Data collection, and the extension then never contacts it.
+The extension uses your existing browser sessions on each service. You stay logged in as normal; the extension reads the same usage data the website shows you and displays it in its popup. If the Prism widget pack is installed, it also hands the data to a small local helper that writes it to a file the Rainmeter widgets read. OpenAI Platform and Google AI Studio spend update while you have that site open in a tab. Any service you don't want tracked can be turned off with its Collect switch in Settings, and the extension then never contacts it.
 
 == What you need ==
 - A signed-in browser session on each service you want to track. That's all you need to see your usage in the extension popup.
 - For the Rainmeter desktop widgets: the Prism Rainmeter widget pack and its native messaging host (one-click install via Setup.bat).
 
 == What this extension does NOT do ==
-- Never contacts a service you turned off under Settings > Data collection
+- Never contacts a service whose Collect switch you turned off
 - Your sign-ins are only ever sent to the service they belong to, never to the developer or any third party
 - No data is sent to third-party servers
 - No tracking, telemetry, or analytics

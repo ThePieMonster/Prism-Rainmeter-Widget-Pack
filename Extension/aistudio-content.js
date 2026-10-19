@@ -50,7 +50,7 @@ function extensionAlive() {
     try { return !!chrome.runtime?.id; } catch { return false; }
 }
 
-// Gemini API under Settings > Data collection in the popup (on unless set to
+// Gemini API's Collect switch in the popup's Settings (on unless set to
 // false). Off, or unreadable, keeps this script idle: it does not touch the
 // page, read anything from it or send anything to the service worker.
 function collectingFrom(setting) {

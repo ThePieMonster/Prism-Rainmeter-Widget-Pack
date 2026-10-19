@@ -26,7 +26,7 @@ the extension:
    Studio are covered in item 4). Your browser attaches the session
    cookies it already has for those sites. For a service you are not
    signed in to, the request carries no session and returns no usage
-   data. Each service can be turned off under **Data collection** in the
+   data. Each service can be turned off with its **Collect** switch in the
    popup's Settings (all are on by default). A service that is off is not
    contacted at all: the extension sends it no requests, does not read
    its cookies, its content script (item 4) stays idle on its pages, and
@@ -53,7 +53,7 @@ the extension:
    storage to the service worker, which then fetches your spend from
    `api.openai.com` (see Authentication credentials below). These scripts
    only run on those sites, while you have them open, and do nothing for
-   a service turned off under Data collection. (Gemini's usage
+   a service whose Collect switch is off. (Gemini's usage
    percentages are instead fetched from `gemini.google.com`'s own internal
    usage endpoint - the same one the site's Usage page uses.)
 5. Sends the extracted values to a small native messaging host bundled
@@ -80,7 +80,7 @@ the extension:
 | Session token | Gemini anti-CSRF token + page build/session IDs | Local cache only (used to call Gemini's usage endpoint) |
 | OpenAI session key | Dashboard key issued by `api.openai.com` | Service-worker memory only (see Authentication credentials) |
 | Internal logs | "Fetch success: MTD=$1.94" | Local cache only (visible on the popup's Logs tab; up to 200 entries; can be cleared there or turned off) |
-| User settings | Log level, which services are turned on under Data collection, which services the popup shows and in what order, the selected Google AI Studio project | `chrome.storage.sync` (see Where your data goes) |
+| User settings | Log level, which services are collected (the Collect switches), which services the popup shows and in what order, the selected Google AI Studio project | `chrome.storage.sync` (see Where your data goes) |
 
 ## What data is NOT collected
 
@@ -119,8 +119,8 @@ To make authenticated requests, the extension relies on:
   returns in exchange for that JWT (the same exchange `platform.openai.com`
   makes itself). It is used only as the bearer token for the spend
   request, and is held in service-worker memory only: it is dropped when
-  the service worker stops, the key is rejected or ChatGPT API is turned
-  off under Data collection, then obtained again. The
+  the service worker stops, the key is rejected or ChatGPT API's Collect
+  switch is turned off, then obtained again. The
   key itself is never stored. At the Debug log level, the log notes when a
   key was obtained, with its last six characters.
 - For ChatGPT, the access token that `chatgpt.com` issues to
